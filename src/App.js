@@ -114,7 +114,16 @@ function App() {
         setStatus(data);
         if (data && data.propertyTypes) setServerTypes(data.propertyTypes);
       })
-      .catch((error) => setLoadError(error.message));
+      .catch((error) => {
+        // 조회 서버가 아직 배포되지 않았으면 게이트웨이가 503(또는 404)을 준다.
+        // 그때 빨간 오류만 띄우면 "고장난 사이트"로 보이므로, 서버가 ready:false 로 답한 것과
+        // 같은 안내 배너를 쓴다(화면 구성은 그대로 보이고 데이터만 비어 있다).
+        if (error.status === 503 || error.status === 404) {
+          setStatus({ ready: false, message: "부동산 조회 서버가 아직 준비되지 않았습니다." });
+        } else {
+          setLoadError(error.message);
+        }
+      });
   }, []);
 
   // 고른 종류의 데이터 범위와 지역 목록. 종류를 바꾸면 다시 읽는다.
