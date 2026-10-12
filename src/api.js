@@ -1,9 +1,10 @@
-// 부동산 실거래 API 호출. 데이터는 fast-api-ai 의 /estate/** 가 내려준다.
+// 부동산 실거래 API 호출. 데이터는 sj-lab-estate(Spring)의 /estate/** 가 내려준다.
+// 2026-10-12 까지는 fast-api-ai 가 내려줬다 — fast-api-ai 는 AI 기능만 담도록 분리했다.
 
-const PREFIX = "/fast-api-ai/estate";
+const PREFIX = "/estate";
 
 /**
- * 로컬은 webpack devServer 프록시(/fast-api-ai → localhost:8100)를 타므로 주소를 붙이지 않는다.
+ * 로컬은 webpack devServer 프록시(/estate → localhost:8100)를 타므로 주소를 붙이지 않는다.
  * 같은 오리진으로 부르는 셈이라 CORS 설정이 필요 없다.
  * 운영은 sj-lab.co.kr 에서 api.sj-lab.co.kr 로 부르며, 게이트웨이가 이미 허용한 오리진이다.
  * (sj-lab-openapi-web 의 getApiBaseUrl 과 같은 규칙)

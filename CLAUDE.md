@@ -11,7 +11,8 @@ sj-lab 저장소를 넘나드는 작업의 총괄 기준 저장소는 `C:\develo
 아파트 매매·전월세 실거래를 보는 화면입니다(국토교통부 공개데이터).
 허브(`sj-lab-hub`)의 "부동산 실거래" 카드로 들어오고, 운영은 `sj-lab.co.kr/estate/` 하위에 서빙됩니다.
 
-데이터는 **`fast-api-ai` 의 `/fast-api-ai/estate/**` 를 호출**해서 받습니다 — DB에 직접 붙지 않습니다.
+데이터는 **`sj-lab-estate`(Spring Boot) 의 `/estate/**` 를 호출**해서 받습니다 — DB에 직접 붙지 않습니다.
+2026-10-12 까지는 `fast-api-ai` 가 내려줬습니다(그 서비스는 AI 기능만 담도록 분리).
 
 ## 반드시 지킬 것
 
@@ -29,7 +30,7 @@ sj-lab 저장소를 넘나드는 작업의 총괄 기준 저장소는 `C:\develo
   "8억 5,000만" 형태로 바꿉니다. 이걸 빼면 숫자가 1/10000로 보여 오해를 부릅니다.
 - **전세·월세 구분은 `monthly_rent === 0`** 입니다. 다른 기준을 만들지 말 것(백엔드도 같은 기준).
 - API 호출은 `src/api.js` 한 곳에 모읍니다. 컴포넌트에서 `fetch` 를 직접 쓰지 말 것.
-  로컬은 webpack devServer 프록시(`/fast-api-ai` → `localhost:8100`)를 타므로 CORS 설정이 필요 없습니다.
+  로컬은 webpack devServer 프록시(`/estate` → `localhost:8100`)를 타므로 CORS 설정이 필요 없습니다.
 
 ## 명령어
 
@@ -39,13 +40,17 @@ npm start        # webpack dev server, 4200. API는 게이트웨이(8100)로 프
 npm run build    # build/ 에 정적 파일 생성
 ```
 
-- `fast-api-ai` 를 따로 띄워 바로 확인할 때는 `ESTATE_PROXY_TARGET=http://localhost:8000 npm start`
-- 화면이 데이터를 못 받으면 `GET /fast-api-ai/estate/status` 의 `ready` 를 먼저 확인할 것
+- 조회 서버(`sj-lab-estate`)를 따로 띄워 바로 확인할 때는 `ESTATE_PROXY_TARGET=http://localhost:8120 npm start`
+- 화면이 데이터를 못 받으면 `GET /estate/status` 의 `ready` 를 먼저 확인할 것
   (false 면 조회 API 쪽 DB 접속 설정이 없는 상태입니다)
 
 ## 현재 범위와 남은 작업
 
 - 요약 카드 → 조건(지역·기간·단지명) → **매매 / 전월세 / 지역 순위** 탭까지 구현돼 있습니다.
+- 헤더에 **화면 전환(실거래 · 소개 · 저장소 · 문의)** 탭이 있습니다 — 지도 사이트의 `data-page`
+  버튼과 같은 역할이며 `App.js` 의 `PAGES` 와 `page` 상태 하나로 바꿔 그립니다(라우터 없음).
+  소개 페이지의 **건수·기간·지역 수는 `meta`·`regions` 를 그대로 씁니다 — 숫자를 본문에 적지 말 것**
+  (수집이 돌면 늘어나므로 적어 두면 바로 거짓이 됩니다).
 - **운영 배포는 아직 하지 않았습니다** — Jenkins 잡과 정적 경로(`html/estate`)가 필요하고,
   `sj-lab-authserver` 의 `login.html` 안 `ALLOWED_REDIRECT_ORIGINS` 에 주소를 넣어야 합니다
   (빠뜨리면 로그인 후 이 사이트로 돌아오지 않습니다).

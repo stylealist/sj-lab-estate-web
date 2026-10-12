@@ -40,10 +40,10 @@ module.exports = {
     historyApiFallback: true,
     // 로컬에서는 API 호출을 게이트웨이(8100)로 넘긴다. 같은 오리진으로 부르는 셈이라
     // CORS 설정이 필요 없다(sj-lab-openapi-web 과 같은 방식).
-    // fast-api-ai 를 따로 띄워 바로 확인할 때는 대상을 8000 으로 바꿀 수 있다.
-    //   ESTATE_PROXY_TARGET=http://localhost:8000 npm start
+    // 조회 서버(sj-lab-estate)를 따로 띄워 바로 확인할 때는 대상을 그 포트로 바꾼다.
+    //   ESTATE_PROXY_TARGET=http://localhost:8120 npm start
     proxy: {
-      "/fast-api-ai": {
+      "/estate": {
         target: process.env.ESTATE_PROXY_TARGET || "http://localhost:8100",
         changeOrigin: true,
       },

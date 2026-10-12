@@ -3,6 +3,8 @@ import React, { useState } from "react";
 /**
  * 헤더 — 지도 사이트(sj-lab-mapservice)의 `css/components/header.css` 와 같은 톤으로 맞췄다.
  * 딥 네이비 그라데이션, 로고 배지 + 서비스명 + 영문 캡션, 허브 링크, 네비 탭, 사용자 영역,
+ * 그리고 화면 전환(실거래 · 소개 · 저장소 · 문의) 탭까지 같은 구조다. 지도의 `data-page`
+ * 버튼과 같은 역할이며, 매물 종류 탭과는 축이 달라 묶음을 따로 둔다.
  * 그리고 아래 가운데의 둥근 **접기 버튼**까지 같은 구조다.
  *
  * 지도는 CSS 파일을 쓰지만 이 저장소는 인라인 style 객체 컨벤션이라 값만 옮겼다.
@@ -12,11 +14,22 @@ import React, { useState } from "react";
  * 전체를 쓰기 때문에 높이를 직접 계산해야 한다). 이 사이트는 그냥 스크롤하는 페이지라
  * **헤더 내용만 접고 접기 버튼만 남긴다** — 본문 높이를 계산할 필요가 없어 어긋날 일이 없다.
  */
-function Header({ propertyTypes, activeType, onSelectType, username, onLogout, hubUrl }) {
+function Header({
+  propertyTypes,
+  activeType,
+  onSelectType,
+  pages,
+  activePage,
+  onSelectPage,
+  username,
+  onLogout,
+  hubUrl,
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [isHubHovered, setIsHubHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
   const [hoveredType, setHoveredType] = useState(null);
+  const [hoveredPage, setHoveredPage] = useState(null);
 
   const getTabStyle = (type) => {
     if (!type.available) {
@@ -34,6 +47,22 @@ function Header({ propertyTypes, activeType, onSelectType, username, onLogout, h
       ...tabBaseStyle,
       background: hoveredType === type.id ? "rgba(148, 178, 232, 0.14)" : "transparent",
       color: hoveredType === type.id ? "#ffffff" : "rgba(226, 232, 240, 0.72)",
+    };
+  };
+
+  const getPageStyle = (page) => {
+    if (page.id === activePage) {
+      return {
+        ...tabBaseStyle,
+        background: "rgba(148, 178, 232, 0.22)",
+        color: "#ffffff",
+        fontWeight: 600,
+      };
+    }
+    return {
+      ...tabBaseStyle,
+      background: hoveredPage === page.id ? "rgba(148, 178, 232, 0.14)" : "transparent",
+      color: hoveredPage === page.id ? "#ffffff" : "rgba(226, 232, 240, 0.72)",
     };
   };
 
@@ -79,6 +108,7 @@ function Header({ propertyTypes, activeType, onSelectType, username, onLogout, h
           {/* 매물 종류 탭. 준비 중인 종류는 지도의 .nav-btn.coming-soon 과 같은 모양
               (흐리게 + 오른쪽 위 "준비중" 배지)으로 두되 누를 수는 있게 했다 —
               눌렀을 때 무엇이 준비 중인지 화면에서 설명하는 쪽이 낫다. */}
+          {activePage === "data" && (
           <nav style={navStyle} aria-label="매물 종류">
             {propertyTypes.map((type) => (
               <button
@@ -94,6 +124,27 @@ function Header({ propertyTypes, activeType, onSelectType, username, onLogout, h
               >
                 {type.label}
                 {!type.available && <span style={comingSoonBadgeStyle}>준비중</span>}
+              </button>
+            ))}
+          </nav>
+          )}
+
+          {/* 화면 전환(실거래 · 소개 · 저장소 · 문의) — 지도 사이트의 .nav-btn 묶음과 같은 역할.
+              매물 종류와 축이 달라 묶음을 따로 둔다. 소개·문의에서는 매물 종류 탭을 감춘다. */}
+          <nav style={navStyle} aria-label="화면 전환">
+            {pages.map((page) => (
+              <button
+                key={page.id}
+                type="button"
+                style={getPageStyle(page)}
+                onClick={() => onSelectPage(page.id)}
+                onMouseEnter={() => setHoveredPage(page.id)}
+                onMouseLeave={() => setHoveredPage(null)}
+                onFocus={() => setHoveredPage(page.id)}
+                onBlur={() => setHoveredPage(null)}
+                aria-current={page.id === activePage ? "page" : undefined}
+              >
+                {page.label}
               </button>
             ))}
           </nav>
@@ -223,7 +274,7 @@ const logoSubStyle = {
   color: "rgba(226, 232, 240, 0.55)",
 };
 
-const headerRightStyle = { display: "flex", alignItems: "center", gap: "1.25rem" };
+const headerRightStyle = { display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", justifyContent: "flex-end" };
 
 const navStyle = {
   flexShrink: 0,

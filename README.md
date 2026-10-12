@@ -11,6 +11,9 @@ sj-lab 플랫폼의 네 번째 서비스로, 허브 첫 화면의 "부동산 실
 
 조건은 **지역 · 기간 · 단지명**으로 좁힙니다. 단지명은 일부만 입력해도 찾습니다.
 
+헤더에서 **소개**(데이터가 어디서 와서 어떻게 보이는지, 지금 없는 것)와
+**저장소 · 문의**(공개 저장소 · 이메일 · 플랫폼 주소)로 넘어갈 수 있습니다 — 지도 사이트와 같은 구성입니다.
+
 ## 데이터
 
 | | 내용 |
@@ -27,13 +30,13 @@ sj-lab 플랫폼의 네 번째 서비스로, 허브 첫 화면의 "부동산 실
 ## 어떻게 동작하나
 
 ```
-브라우저 → 게이트웨이(api.sj-lab.co.kr) → fast-api-ai → PostgreSQL(estate 스키마)
+브라우저 → 게이트웨이(api.sj-lab.co.kr) → sj-lab-estate → PostgreSQL(estate 스키마)
                                             ▲
                               sj-lab-scheduler 가 매일 수집해 적재
 ```
 
-이 저장소는 **화면만** 담당합니다. 데이터 조회는 `fast-api-ai` 의
-`/fast-api-ai/estate/**` 를 호출하고, DB에 직접 붙지 않습니다.
+이 저장소는 **화면만** 담당합니다. 데이터 조회는 `sj-lab-estate` 의
+`/estate/**` 를 호출하고, DB에 직접 붙지 않습니다.
 
 차트는 **외부 차트 라이브러리 없이** 인라인 SVG로 직접 그립니다 — 의존성은
 `react`·`react-dom` 둘뿐입니다.
@@ -47,7 +50,7 @@ npm run build    # build/ 에 정적 파일
 ```
 
 로컬에서는 webpack dev server가 API 호출을 게이트웨이(8100)로 넘겨 CORS 설정 없이 동작합니다.
-`fast-api-ai` 를 따로 띄워 확인할 때는 `ESTATE_PROXY_TARGET=http://localhost:8000 npm start`.
+조회 서버를 따로 띄워 확인할 때는 `ESTATE_PROXY_TARGET=http://localhost:8120 npm start`.
 
 **로그인이 필요합니다.** 토큰이 없으면 공유 로그인 페이지로 보내고, 돌아올 때 받은 토큰을
 이 사이트의 `localStorage` 에 저장합니다(허브·지도·API 센터와 같은 방식).
@@ -55,7 +58,7 @@ npm run build    # build/ 에 정적 파일
 ## 화면이 비어 있을 때
 
 ```
-GET /fast-api-ai/estate/status
+GET /estate/status
 ```
 
 `ready: false` 면 조회 API 쪽 DB 접속 설정(`ESTATE_DB_DSN`)이 없는 상태입니다.

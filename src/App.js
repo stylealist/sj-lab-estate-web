@@ -15,6 +15,8 @@ import {
 } from "./api";
 import Header from "./components/Header";
 import ComingSoon from "./components/ComingSoon";
+import About from "./components/About";
+import Contact from "./components/Contact";
 import TrendChart from "./components/TrendChart";
 import TradeTable from "./components/TradeTable";
 import RankingList from "./components/RankingList";
@@ -46,6 +48,17 @@ function buildMonthOptions(fromYm, toYm) {
   return months.reverse();
 }
 
+// 화면 전환 — 지도 사이트의 "지도 / 소개 / 저장소 · 문의" 와 같은 구성.
+// 라우터를 쓰지 않는 저장소 규칙이라(openapi-web 과 같음) 상태 하나로 바꿔 그린다.
+const PAGES = [
+  { id: "data", label: "실거래" },
+  { id: "about", label: "소개" },
+  { id: "contact", label: "저장소 · 문의" },
+];
+
+// 개발 변경 로그(발행 페이지) — 지도·허브와 같은 주소를 쓴다
+const LOG_URL = "https://claude.ai/artifact/HhEYu2UmxSko5h8uef7hB9";
+
 const SUB_TABS = [
   ["trade", "매매"],
   ["rent", "전월세"],
@@ -63,6 +76,7 @@ function App() {
   const [regions, setRegions] = useState([]);
   const [loadError, setLoadError] = useState("");
 
+  const [page, setPage] = useState("data");
   const [tab, setTab] = useState("trade");
   const [sggCd, setSggCd] = useState("");
   const [fromYm, setFromYm] = useState("");
@@ -171,23 +185,33 @@ function App() {
       <Header
         propertyTypes={propertyTypes}
         activeType={propertyType}
-        onSelectType={setPropertyType}
+        onSelectType={(id) => {
+          // 소개·문의를 보다가 매물 종류를 누르면 실거래 화면으로 돌아온다
+          setPropertyType(id);
+          setPage("data");
+        }}
+        pages={PAGES}
+        activePage={page}
+        onSelectPage={setPage}
         username={username}
         onLogout={handleLogout}
         hubUrl={resolveHubUrl()}
       />
 
-      {status && !status.ready && (
+      {page === "data" && status && !status.ready && (
         <div style={noticeBannerStyle}>
           {status.message} — 데이터 수집·접속 설정이 끝나면 화면이 채워집니다.
         </div>
       )}
 
-      {loadError && <div style={errorBannerStyle}>{loadError}</div>}
+      {page === "data" && loadError && <div style={errorBannerStyle}>{loadError}</div>}
 
       <main style={mainStyle}>
+        {page === "about" && <About meta={meta} regionCount={regions.length} logUrl={LOG_URL} />}
+        {page === "contact" && <Contact />}
+
         {/* 준비 중인 매물 종류를 고르면 그 사실과 남은 일을 설명한다 */}
-        {!currentType.available ? (
+        {page === "data" && (!currentType.available ? (
           <ComingSoon type={currentType} onGoApartment={() => setPropertyType("apt")} />
         ) : (
           <>
@@ -360,7 +384,7 @@ function App() {
               </div>
             )}
           </>
-        )}
+        ))}
       </main>
     </div>
   );
