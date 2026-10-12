@@ -7,8 +7,7 @@ import React from "react";
  * 링크는 전부 공개 주소만 둔다(저장소·운영 포털·이메일). 이 저장소는 public 이므로
  * 내부 주소·계정·토큰은 적지 말 것.
  *
- * `sj-lab-estate-web`(이 화면) 저장소는 아직 GitHub 원격이 없어 목록에 넣지 않았다.
- * 공개하면 아래 REPOS 에 한 줄 추가하면 된다.
+ * 저장소를 새로 공개하면 아래 REPOS 에 한 줄 추가하면 된다(2026-10-12 부동산 두 저장소 공개).
  */
 const LOG_URL = "https://claude.ai/artifact/HhEYu2UmxSko5h8uef7hB9";
 
@@ -16,6 +15,7 @@ const REPOS = [
   ["sj-lab", "https://github.com/stylealist/sj-lab", "플랫폼 소개 페이지"],
   ["sj-lab-hub", "https://github.com/stylealist/sj-lab-hub", "첫 화면(허브)"],
   ["sj-lab-estate", "https://github.com/stylealist/sj-lab-estate", "이 화면이 부르는 조회 서버"],
+  ["sj-lab-estate-web", "https://github.com/stylealist/sj-lab-estate-web", "이 화면"],
   ["sj-lab-scheduler", "https://github.com/stylealist/sj-lab-scheduler", "실거래 수집 배치"],
   ["sj-lab-apigateway", "https://github.com/stylealist/sj-lab-apigateway", "주소 하나로 받는 입구"],
   ["sj-lab-mapservice", "https://github.com/stylealist/sj-lab-mapservice", "시설물 관리 지도"],
@@ -93,7 +93,7 @@ function Contact() {
         <section style={{ ...channelCardStyle, gridColumn: "1 / -1" }}>
           <div style={channelTitleStyle}>GitHub 저장소</div>
           <p style={channelDescStyle}>
-            저장소마다 README에 구조와 실행 방법이 있습니다. 이 화면의 저장소는 공개 준비 중입니다.
+            저장소마다 README에 구조와 실행 방법이 있습니다. 화면부터 조회 서버, 수집 배치, 배포 설정까지 공개해 두었습니다.
           </p>
           <ul style={linkListStyle}>
             {REPOS.map(([name, url, note]) => (
