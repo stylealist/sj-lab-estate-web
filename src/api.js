@@ -59,13 +59,48 @@ async function get(path, params) {
   return data;
 }
 
+/**
+ * 매물 종류. 아파트만 서비스하고 나머지는 준비 중이다.
+ *
+ * `id` 가 그대로 API 경로 조각이 된다(`/estate/<id>/trade/monthly`) — 국토교통부가 매물
+ * 종류별로 다른 API 를 주기 때문에 서버도 종류별로 나뉘어 있다. 새 종류를 열 때는
+ * 여기 `available` 을 true 로 바꾸면 화면이 그대로 따라온다(경로를 고칠 필요 없음).
+ */
+export const PROPERTY_TYPES = [
+  {
+    id: "apt",
+    label: "아파트",
+    available: true,
+    description: "아파트 매매·전월세 실거래입니다.",
+  },
+  {
+    id: "offi",
+    label: "오피스텔",
+    available: false,
+    description: "오피스텔 매매·전월세 실거래입니다. 수집과 화면을 준비하고 있습니다.",
+    apiHint: "오피스텔 실거래 API",
+  },
+  {
+    id: "villa",
+    label: "빌라 · 다가구",
+    available: false,
+    description:
+      "연립·다세대(빌라)와 단독·다가구 실거래입니다. 두 종류는 원천 API가 서로 달라 함께 준비하고 있습니다.",
+    apiHint: "연립다세대·단독다가구 실거래 API",
+  },
+];
+
+export function findPropertyType(id) {
+  return PROPERTY_TYPES.find((type) => type.id === id) || PROPERTY_TYPES[0];
+}
+
 export const fetchStatus = () => get("/status");
-export const fetchMeta = () => get("/meta");
-export const fetchRegions = () => get("/regions");
-export const fetchTradeMonthly = (params) => get("/apt/trade/monthly", params);
-export const fetchRentMonthly = (params) => get("/apt/rent/monthly", params);
-export const fetchTrades = (params) => get("/apt/trade", params);
-export const fetchRanking = (params) => get("/apt/trade/ranking", params);
+export const fetchMeta = (type = "apt") => get(`/${type}/meta`);
+export const fetchRegions = (type = "apt") => get(`/${type}/regions`);
+export const fetchTradeMonthly = (type, params) => get(`/${type}/trade/monthly`, params);
+export const fetchRentMonthly = (type, params) => get(`/${type}/rent/monthly`, params);
+export const fetchTrades = (type, params) => get(`/${type}/trade`, params);
+export const fetchRanking = (type, params) => get(`/${type}/trade/ranking`, params);
 
 // ---------------------------------------------------------------------------
 // 표시 도우미 — 원천 금액 단위가 만원이라 그대로 보여 주면 읽기 어렵다
