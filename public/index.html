@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <!-- SSO 로그인 게이트: 로그인 안 됐으면 React 번들이 그리기 전에 로그인 서버로 보낸다.
+       HtmlWebpackPlugin이 이 템플릿을 그대로 build/index.html로 옮기므로, 별도 복사 단계가
+       필요한 외부 파일 대신 인라인 스크립트로 둔다. sj-lab-hub의 public/index.html,
+       sj-lab-mapservice의 js/auth-gate.js와 로직이 동일하다(빌드 도구가 서로 달라 복제). -->
+  <script>
+    (function () {
+      "use strict";
+
+      var STORAGE_KEY = "sjLabAuthToken";
+      var LOGIN_PATH = "/auth/login.html";
+
+      function getAuthBaseUrl() {
+        var hostname = window.location.hostname;
+        if (hostname === "localhost" || hostname === "127.0.0.1") {
+          return "http://localhost:8100";
+        }
+        return "https://api.sj-lab.co.kr";
+      }
+
+      function readStoredToken() {
+        try {
+          var raw = window.localStorage.getItem(STORAGE_KEY);
+          if (!raw) return null;
+          var data = JSON.parse(raw);
+          if (!data || !data.accessToken || !data.expiresAt) return null;
+          if (Date.now() >= data.expiresAt) return null;
+          return data;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function storeToken(accessToken, expiresInSeconds, username) {
+        var data = {
+          accessToken: accessToken,
+          username: username || "",
+          expiresAt: Date.now() + Math.max(0, (Number(expiresInSeconds) || 0) * 1000)
+        };
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+          // 저장 실패해도 이번 페이지 로드는 메모리상 값으로 계속 진행
+        }
+        return data;
+      }
+
+      function clearStoredToken() {
+        try {
+          window.localStorage.removeItem(STORAGE_KEY);
+        } catch (e) { /* no-op */ }
+      }
+
+      function redirectToLogin(isLogout) {
+        var redirectUri = window.location.href.split("#")[0];
+        var loginUrl = getAuthBaseUrl() + LOGIN_PATH + "?redirect_uri=" + encodeURIComponent(redirectUri);
+        // logout=1 이면 로그인 페이지가 세션 쿠키까지 지운다(안 그러면 곧바로 재로그인됨)
+        if (isLogout) loginUrl += "&logout=1";
+        window.location.replace(loginUrl);
+      }
+
+      function consumeFragmentToken() {
+        var hash = window.location.hash;
+        if (!hash || hash.indexOf("auth_token=") === -1) return null;
+        var fragmentParams = new URLSearchParams(hash.replace(/^#/, ""));
+        var token = fragmentParams.get("auth_token");
+        if (!token) return null;
+        var data = storeToken(token, fragmentParams.get("auth_expires"), fragmentParams.get("auth_username"));
+        var cleanUrl = window.location.pathname + window.location.search;
+        window.history.replaceState(null, "", cleanUrl);
+        return data;
+      }
+
+      window.SjLabAuth = {
+        getToken: function () {
+          var data = readStoredToken();
+          return data ? data.accessToken : null;
+        },
+        getUsername: function () {
+          var data = readStoredToken();
+          return data ? data.username : null;
+        },
+        logout: function () {
+          clearStoredToken();
+          redirectToLogin(true);
+        },
+        getAuthBaseUrl: getAuthBaseUrl
+      };
+
+      var current = consumeFragmentToken() || readStoredToken();
+      if (!current) {
+        redirectToLogin();
+      }
+    })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SJ-LAB 부동산 실거래</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      background: #f8fafc;
+      color: #0f172a;
+      font-family: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    #root {
+      height: 100%;
+    }
+
+    /* 초기 로딩 화면 */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      color: #64748b;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+    }
+
+    code,
+    pre {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div class="loading">Loading SJ-LAB 부동산 실거래...</div>
+  </div>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <!-- SJ-LAB OpenAPI tab icon: 허브 OpenAPI 카드와 같은 딥 네이비 블루 그라데이션 + 연결(플러그) 모양.
+       허브 카드 색(#2563eb → #1e3a8a)을 바꾸면 이 파일도 같이 고칠 것. -->
+  <defs>
+    <linearGradient id="apiBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e3a8a"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8" fill="url(#apiBg)"/>
+  <path d="M11 11 L7 16 L11 21" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M21 11 L25 16 L21 21" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <path d="M18 9 L14 23" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.85"/>
+</svg>
