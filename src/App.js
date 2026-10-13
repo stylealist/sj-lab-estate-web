@@ -119,7 +119,11 @@ function App() {
         // 그때 빨간 오류만 띄우면 "고장난 사이트"로 보이므로, 서버가 ready:false 로 답한 것과
         // 같은 안내 배너를 쓴다(화면 구성은 그대로 보이고 데이터만 비어 있다).
         if (error.status === 503 || error.status === 404) {
-          setStatus({ ready: false, message: "부동산 조회 서버가 아직 준비되지 않았습니다." });
+          setStatus({
+            ready: false,
+            message: "부동산 조회 서버가 아직 준비되지 않았습니다.",
+            detail: "서버가 응답하지 않습니다(배포 중이거나 아직 배포 전). 잠시 뒤 다시 열어 보세요.",
+          });
         } else {
           setLoadError(error.message);
         }
@@ -207,9 +211,13 @@ function App() {
         hubUrl={resolveHubUrl()}
       />
 
+      {/* 준비되지 않은 이유를 서버가 알려 주면(detail) 그대로 보여 준다 — "준비되지 않았다"만
+          띄우면 접속 설정이 없는 것인지 DB 에 못 붙는 것인지 알 수 없어 확인이 느려진다.
+          서버는 접속 문자열·비밀번호를 담지 않고 원인 종류만 내려준다. */}
       {page === "data" && status && !status.ready && (
         <div style={noticeBannerStyle}>
-          {status.message} — 데이터 수집·접속 설정이 끝나면 화면이 채워집니다.
+          {status.message}
+          {status.detail ? ` — ${status.detail}` : " — 데이터 수집·접속 설정이 끝나면 화면이 채워집니다."}
         </div>
       )}
 
