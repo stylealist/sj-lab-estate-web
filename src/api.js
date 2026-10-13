@@ -98,6 +98,9 @@ export function findPropertyType(id) {
 export const fetchStatus = () => get("/status");
 export const fetchMeta = (type = "apt") => get(`/${type}/meta`);
 export const fetchRegions = (type = "apt") => get(`/${type}/regions`);
+// 읍면동 목록. 시군구를 고른 뒤 다음 단계를 그릴 때 부른다(읍면동은 코드가 아니라 이름으로 가린다 —
+// 매매·전월세 두 표에 공통으로 있는 키가 이름뿐이다).
+export const fetchEmdList = (type, sggCd) => get(`/${type}/regions/emd`, { sggCd });
 export const fetchTradeMonthly = (type, params) => get(`/${type}/trade/monthly`, params);
 export const fetchRentMonthly = (type, params) => get(`/${type}/rent/monthly`, params);
 export const fetchTrades = (type, params) => get(`/${type}/trade`, params);

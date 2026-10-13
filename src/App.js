@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   PROPERTY_TYPES,
   fetchMeta,
+  fetchEmdList,
   fetchRanking,
   fetchRegions,
   fetchRentMonthly,
@@ -15,6 +16,7 @@ import {
 } from "./api";
 import Header from "./components/Header";
 import ComingSoon from "./components/ComingSoon";
+import LoadingBar from "./components/LoadingBar";
 import About from "./components/About";
 import Contact from "./components/Contact";
 import TrendChart from "./components/TrendChart";
@@ -59,6 +61,18 @@ const PAGES = [
 // 개발 변경 로그(발행 페이지) — 지도·허브와 같은 주소를 쓴다
 const LOG_URL = "https://claude.ai/artifact/HhEYu2UmxSko5h8uef7hB9";
 
+/**
+ * 첫 화면의 기본 지역 — 서울 강남구.
+ *
+ * **전국을 기본값으로 두면 첫 화면이 몇 초 멈춘다.** 평균·중위를 내려면 인덱스에 없는 금액·면적을
+ * 실제로 읽어야 해서 전국은 매매 8.6초·전월세 28.7초였다(실측). 지역 한 곳은 0.04초다.
+ * 그래서 작은 범위로 먼저 그리고, 전국은 사용자가 고를 때만 조회한다.
+ * (전국 집계를 미리 계산해 두는 스크립트가 적용되면 이 기본값을 바꿔도 된다 —
+ *  sj-lab/db/estate/estate_apt_monthly_matview.sql)
+ */
+const DEFAULT_SIDO_CD = "11";
+const DEFAULT_SGG_CD = "11680";
+
 const SUB_TABS = [
   ["trade", "매매"],
   ["rent", "전월세"],
@@ -76,9 +90,16 @@ function App() {
   const [regions, setRegions] = useState([]);
   const [loadError, setLoadError] = useState("");
 
+  // 첫 조회(상태·범위·지역 목록)가 끝날 때까지도 로딩바를 보여 준다
+  const [initialLoading, setInitialLoading] = useState(true);
+
   const [page, setPage] = useState("data");
   const [tab, setTab] = useState("trade");
+  // 지역은 시도 → 시군구 → 읍면동 3단계로 고른다. 읍면동은 이름(umdNm)으로 가린다.
+  const [sidoCd, setSidoCd] = useState(DEFAULT_SIDO_CD);
   const [sggCd, setSggCd] = useState("");
+  const [umdNm, setUmdNm] = useState("");
+  const [emdList, setEmdList] = useState([]);
   const [fromYm, setFromYm] = useState("");
   const [toYm, setToYm] = useState("");
   const [aptNm, setAptNm] = useState("");
@@ -113,6 +134,8 @@ function App() {
       .then((data) => {
         setStatus(data);
         if (data && data.propertyTypes) setServerTypes(data.propertyTypes);
+        // 쓸 수 없는 상태면 뒤에 더 받을 것이 없으므로 여기서 로딩바를 끝낸다
+        if (!data || !data.ready) setInitialLoading(false);
       })
       .catch((error) => {
         // 조회 서버가 아직 배포되지 않았으면 게이트웨이가 503(또는 404)을 준다.
@@ -127,17 +150,35 @@ function App() {
         } else {
           setLoadError(error.message);
         }
+        setInitialLoading(false);
       });
   }, []);
 
   // 고른 종류의 데이터 범위와 지역 목록. 종류를 바꾸면 다시 읽는다.
   useEffect(() => {
-    if (!status || !status.ready || !currentType.available) return;
+    if (!status || !status.ready || !currentType.available) {
+      if (status && !status.ready) setInitialLoading(false);
+      return;
+    }
     setLoadError("");
+    setInitialLoading(true);
     Promise.all([fetchMeta(propertyType), fetchRegions(propertyType)])
       .then(([metaData, regionData]) => {
+        const items = regionData.items || [];
         setMeta(metaData);
-        setRegions(regionData.items || []);
+        setRegions(items);
+        // 기본 지역을 먼저 정한다 — 비워 두면 전국이 조회돼 첫 화면이 몇 초 멈춘다
+        // (DEFAULT_SGG_CD 주석 참고). 그 지역이 목록에 없으면 첫 지역을 쓴다.
+        setSggCd((prev) => {
+          if (prev) return prev;
+          if (items.some((region) => region.sgg_cd === DEFAULT_SGG_CD)) return DEFAULT_SGG_CD;
+          const first = items[0];
+          if (first) {
+            setSidoCd(first.sido_cd || "");
+            return first.sgg_cd;
+          }
+          return "";
+        });
         // 기본 기간은 가장 최근 12개월 — 전 기간을 한 번에 그리면 눈금이 빽빽해진다
         if (metaData && metaData.trade_to_ym) {
           const all = buildMonthOptions(metaData.trade_from_ym, metaData.trade_to_ym);
@@ -145,10 +186,85 @@ function App() {
           setFromYm(String(all.length > 12 ? all[11] : all[all.length - 1]));
         }
       })
-      .catch((error) => setLoadError(error.message));
+      .catch((error) => setLoadError(error.message))
+      .finally(() => setInitialLoading(false));
   }, [status, propertyType, currentType.available]);
 
-  const params = useMemo(() => ({ sggCd, fromYm, toYm }), [sggCd, fromYm, toYm]);
+  // 시도 목록은 시군구 목록에서 묶어 만든다 — 서버 호출을 늘리지 않기 위해 시군구 응답에
+  // 시도 코드·이름이 함께 들어 있다.
+  const sidoList = useMemo(() => {
+    const map = new Map();
+    regions.forEach((region) => {
+      const code = region.sido_cd || "";
+      if (!code) return;
+      const found = map.get(code);
+      if (found) {
+        found.deal_count += Number(region.deal_count) || 0;
+      } else {
+        map.set(code, {
+          sido_cd: code,
+          sido_nm: region.sido_nm || code,
+          deal_count: Number(region.deal_count) || 0,
+        });
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.sido_nm.localeCompare(b.sido_nm, "ko"));
+  }, [regions]);
+
+  const sggList = useMemo(
+    () => (sidoCd ? regions.filter((region) => region.sido_cd === sidoCd) : []),
+    [regions, sidoCd]
+  );
+
+  // 시군구를 고르면 그 안의 읍면동을 받아 온다(자연키 인덱스를 타서 빠르다 — 캐시하지 않는다)
+  useEffect(() => {
+    if (!status || !status.ready || !currentType.available || !sggCd) {
+      setEmdList([]);
+      return;
+    }
+    let alive = true;
+    fetchEmdList(propertyType, sggCd)
+      .then((data) => {
+        if (alive) setEmdList(data.items || []);
+      })
+      .catch(() => {
+        if (alive) setEmdList([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [status, currentType.available, propertyType, sggCd]);
+
+  const handleSelectSido = (nextSido) => {
+    setSidoCd(nextSido);
+    setUmdNm("");
+    if (!nextSido) {
+      // 전국 — 시군구·읍면동은 비운다
+      setSggCd("");
+      return;
+    }
+    const first = regions.find((region) => region.sido_cd === nextSido);
+    setSggCd(first ? first.sgg_cd : "");
+  };
+
+  const handleSelectSgg = (nextSgg) => {
+    setSggCd(nextSgg);
+    setUmdNm("");
+  };
+
+  /** 순위에서 지역을 누르면 그 지역으로 바꿔 본다(시도까지 함께 맞춘다). */
+  const handleSelectRegionFromRanking = (nextSgg) => {
+    const found = regions.find((region) => region.sgg_cd === nextSgg);
+    if (found && found.sido_cd) setSidoCd(found.sido_cd);
+    setSggCd(nextSgg);
+    setUmdNm("");
+    setTab("trade");
+  };
+
+  const params = useMemo(
+    () => ({ sggCd, umdNm, fromYm, toYm }),
+    [sggCd, umdNm, fromYm, toYm]
+  );
 
   const reload = useCallback(() => {
     if (!status || !status.ready || !currentType.available || !fromYm || !toYm) return;
@@ -162,13 +278,19 @@ function App() {
     } else if (tab === "rent") {
       jobs.push(fetchRentMonthly(propertyType, params).then((d) => setRentMonthly(d.items || [])));
     } else {
-      jobs.push(fetchRanking(propertyType, { fromYm, toYm, limit: 25 }).then((d) => setRanking(d.items || [])));
+      // 순위는 고른 시도 안에서 낸다 — 전국은 4.7초, 시도 범위는 0.6초다(실측).
+      // 시도를 비우면(전국) 종전처럼 전국 순위를 낸다.
+      jobs.push(
+        fetchRanking(propertyType, { sidoCd, fromYm, toYm, limit: 25 }).then((d) =>
+          setRanking(d.items || [])
+        )
+      );
     }
 
     Promise.all(jobs)
       .catch((error) => setLoadError(error.message))
       .then(() => setLoading(false));
-  }, [status, currentType.available, propertyType, tab, params, aptNm, fromYm, toYm]);
+  }, [status, currentType.available, propertyType, tab, params, aptNm, fromYm, toYm, sidoCd]);
 
   useEffect(() => {
     reload();
@@ -189,12 +311,26 @@ function App() {
     };
   };
 
-  const selectedRegionName = sggCd
-    ? (regions.find((r) => r.sgg_cd === sggCd) || {}).sgg_nm || sggCd
-    : "전국";
+  const selectedSidoName = useMemo(() => {
+    const sido = sidoList.find((item) => item.sido_cd === sidoCd);
+    return sido ? sido.sido_nm : "전국";
+  }, [sidoList, sidoCd]);
+
+  const selectedRegionName = useMemo(() => {
+    if (!sggCd) {
+      const sido = sidoList.find((item) => item.sido_cd === sidoCd);
+      return sido ? `${sido.sido_nm} 전체` : "전국";
+    }
+    const region = regions.find((r) => r.sgg_cd === sggCd) || {};
+    const parts = [region.sido_nm, region.sgg_nm || sggCd];
+    if (umdNm) parts.push(umdNm);
+    return parts.filter(Boolean).join(" ");
+  }, [regions, sidoList, sidoCd, sggCd, umdNm]);
 
   return (
     <div style={pageStyle}>
+      {/* 조회가 몇 초 걸릴 수 있어(전국 평균 등) 맨 위에 진행 표시를 둔다 */}
+      <LoadingBar active={initialLoading || loading} />
       <Header
         propertyTypes={propertyTypes}
         activeType={propertyType}
@@ -294,13 +430,49 @@ function App() {
             {/* 조건 */}
             <div style={cardStyle}>
               <div style={filterRowStyle}>
+                {/* 지역은 시도 → 시군구 → 읍면동 3단계. 좁히면 조회가 빨라진다(전국은 몇 초). */}
                 <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>지역</span>
-                  <select style={selectStyle} value={sggCd} onChange={(e) => setSggCd(e.target.value)}>
-                    <option value="">전국</option>
-                    {regions.map((region) => (
+                  <span style={fieldLabelStyle}>시 · 도</span>
+                  <select style={selectStyle} value={sidoCd} onChange={(e) => handleSelectSido(e.target.value)}>
+                    {/* 전국은 평균·중위 계산 때문에 몇 초 걸린다 — 고를 수는 있게 두고 미리 알려 준다 */}
+                    <option value="">전국 (조회가 몇 초 걸립니다)</option>
+                    {sidoList.map((sido) => (
+                      <option key={sido.sido_cd} value={sido.sido_cd}>
+                        {sido.sido_nm} ({formatCount(sido.deal_count)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={fieldStyle}>
+                  <span style={fieldLabelStyle}>시 · 군 · 구</span>
+                  <select
+                    style={selectStyle}
+                    value={sggCd}
+                    disabled={!sidoCd}
+                    onChange={(e) => handleSelectSgg(e.target.value)}
+                  >
+                    <option value="">{sidoCd ? "시·도 전체 (몇 초 걸립니다)" : "시·도를 먼저 고르세요"}</option>
+                    {sggList.map((region) => (
                       <option key={region.sgg_cd} value={region.sgg_cd}>
                         {region.sgg_nm} ({formatCount(region.deal_count)})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={fieldStyle}>
+                  <span style={fieldLabelStyle}>읍 · 면 · 동</span>
+                  <select
+                    style={selectStyle}
+                    value={umdNm}
+                    disabled={!sggCd || emdList.length === 0}
+                    onChange={(e) => setUmdNm(e.target.value)}
+                  >
+                    <option value="">{sggCd ? "시·군·구 전체" : "시·군·구를 먼저 고르세요"}</option>
+                    {emdList.map((emd) => (
+                      <option key={emd.umd_nm} value={emd.umd_nm}>
+                        {emd.umd_nm} ({formatCount(emd.deal_count)})
                       </option>
                     ))}
                   </select>
@@ -387,16 +559,14 @@ function App() {
               <div style={cardStyle}>
                 <h2 style={sectionTitleStyle}>지역별 평균 매매가</h2>
                 <p style={sectionNoteStyle}>
-                  선택한 기간의 평균입니다. 거래가 10건 미만인 지역은 평균이 크게 튀어 제외했습니다.
+                  {sidoCd ? `${selectedSidoName} 안에서` : "전국"} 선택한 기간의 평균입니다.
+                  거래가 10건 미만인 지역은 평균이 크게 튀어 제외했습니다.
                   지역명을 누르면 그 지역으로 바꿔 봅니다.
                 </p>
                 <RankingList
                   items={ranking}
                   loading={loading}
-                  onSelectRegion={(code) => {
-                    setSggCd(code);
-                    setTab("trade");
-                  }}
+                  onSelectRegion={handleSelectRegionFromRanking}
                 />
               </div>
             )}
