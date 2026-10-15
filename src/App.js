@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   PROPERTY_TYPES,
+  fetchComplexes,
   fetchMeta,
   fetchEmdList,
   fetchRanking,
@@ -10,18 +11,15 @@ import {
   fetchTradeMonthly,
   fetchTrades,
   findPropertyType,
-  formatCount,
-  formatManwon,
-  formatYmLong,
 } from "./api";
 import Header from "./components/Header";
 import ComingSoon from "./components/ComingSoon";
+import EstateMap from "./components/EstateMap";
+import MapSidePanel from "./components/MapSidePanel";
+import ComplexPopup from "./components/ComplexPopup";
 import LoadingBar from "./components/LoadingBar";
 import About from "./components/About";
 import Contact from "./components/Contact";
-import TrendChart from "./components/TrendChart";
-import TradeTable from "./components/TradeTable";
-import RankingList from "./components/RankingList";
 
 // 허브는 로컬에서 3000번 포트에 따로 뜬다. 운영은 같은 오리진의 최상위 경로다.
 // (sj-lab-openapi-web·지도와 같은 규칙 — 절대 경로를 하드코딩하면 로컬에서 404 가 난다)
@@ -73,10 +71,17 @@ const LOG_URL = "https://claude.ai/artifact/HhEYu2UmxSko5h8uef7hB9";
 const DEFAULT_SIDO_CD = "11";
 const DEFAULT_SGG_CD = "11680";
 
-const SUB_TABS = [
+/**
+ * 왼쪽 패널의 보기 전환.
+ *
+ * 지도가 화면 전체를 쓰므로(호갱노노와 같은 구성) 목록·추세·순위는 모두 패널 안에 들어간다.
+ * 처음에는 단지 목록을 보여 준다 — 지도에서 핀이나 지역을 누르면 그 자리에 단지 시세가 열린다.
+ */
+const PANEL_TABS = [
+  ["complex", "단지"],
   ["trade", "매매"],
   ["rent", "전월세"],
-  ["ranking", "지역 순위"],
+  ["ranking", "순위"],
 ];
 
 function App() {
@@ -94,12 +99,24 @@ function App() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const [page, setPage] = useState("data");
-  const [tab, setTab] = useState("trade");
+  // 왼쪽 패널에서 무엇을 보고 있는지. 지도는 화면 전체이므로 탭이 아니다.
+  const [tab, setTab] = useState("complex");
   // 지역은 시도 → 시군구 → 읍면동 3단계로 고른다. 읍면동은 이름(umdNm)으로 가린다.
   const [sidoCd, setSidoCd] = useState(DEFAULT_SIDO_CD);
   const [sggCd, setSggCd] = useState("");
   const [umdNm, setUmdNm] = useState("");
   const [emdList, setEmdList] = useState([]);
+  // 단지 탭 — 목록과 고른 단지
+  const [complexes, setComplexes] = useState([]);
+  const [complexKeyword, setComplexKeyword] = useState("");
+  const [selectedComplex, setSelectedComplex] = useState(null);
+  // 지도가 알려 주는 "지금 보고 있는 단계"(sido / sgg / emd) — 줌에 따라 바뀐다
+  const [mapLevel, setMapLevel] = useState("emd");
+  // 패널에서 지역을 고르면 지도를 그곳으로 옮기라고 부탁한다(지도가 처리한 뒤 비워진다)
+  const [focusRequest, setFocusRequest] = useState(null);
+  // 단지 핀 준비 상태(좌표 수집 진행률). 지도가 알려 준다.
+  const [pinInfo, setPinInfo] = useState(null);
+  const [panelOpen, setPanelOpen] = useState(true);
   const [fromYm, setFromYm] = useState("");
   const [toYm, setToYm] = useState("");
   const [aptNm, setAptNm] = useState("");
@@ -109,7 +126,6 @@ function App() {
   const [trades, setTrades] = useState([]);
   const [ranking, setRanking] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [hoveredSubTab, setHoveredSubTab] = useState(null);
 
   const username = window.SjLabAuth ? window.SjLabAuth.getUsername() : "";
 
@@ -235,30 +251,64 @@ function App() {
     };
   }, [status, currentType.available, propertyType, sggCd]);
 
+  // 패널에서 지역을 고르면 상태를 바꾸고 **지도도 그곳으로 옮긴다**.
+  // 지도를 손으로 밀어도 같은 상태가 바뀌므로(handleMapRegionChange) 두 방향이 같은 값을 본다.
   const handleSelectSido = (nextSido) => {
     setSidoCd(nextSido);
     setUmdNm("");
+    setSelectedComplex(null);
     if (!nextSido) {
-      // 전국 — 시군구·읍면동은 비운다
       setSggCd("");
       return;
     }
     const first = regions.find((region) => region.sido_cd === nextSido);
     setSggCd(first ? first.sgg_cd : "");
+    setFocusRequest({ level: "sido", code: nextSido });
   };
 
   const handleSelectSgg = (nextSgg) => {
     setSggCd(nextSgg);
     setUmdNm("");
+    setSelectedComplex(null);
+    if (nextSgg) setFocusRequest({ level: "sgg", code: nextSgg });
   };
 
-  /** 순위에서 지역을 누르면 그 지역으로 바꿔 본다(시도까지 함께 맞춘다). */
+  const handleSelectUmd = (nextUmd) => {
+    setUmdNm(nextUmd);
+    setSelectedComplex(null);
+    // 읍면동은 코드가 아니라 이름으로 가리므로(두 표의 공통 키가 이름뿐) 이름으로 찾아 달라고 한다
+    if (nextUmd) setFocusRequest({ level: "emd", name: nextUmd });
+  };
+
+  /**
+   * 지도가 알려 주는 "지금 보고 있는 지역". 줌·이동으로 바뀐다.
+   *
+   * <p>지도를 밀고 당기는 것만으로 조건이 따라오게 하려는 것이다. 같은 값이면 상태를 건드리지
+   * 않는다 — 안 그러면 지도 → 상태 → 지도로 되돌아가는 고리가 생긴다.
+   */
+  const handleMapRegionChange = useCallback((context) => {
+    setMapLevel(context.level);
+    setSidoCd((prev) => (context.sidoCd && context.sidoCd !== prev ? context.sidoCd : prev));
+    setSggCd((prev) => {
+      if (context.level === "sido") return prev;
+      return context.sggCd && context.sggCd !== prev ? context.sggCd : prev;
+    });
+  }, []);
+
+  /** 지도 핀을 누르면 왼쪽 패널에 그 단지를 연다(핀 라벨과 같은 값이 패널에서 자세히 보인다). */
+  const handleSelectComplexFromMap = useCallback((pin) => {
+    setSelectedComplex({ apt_seq: pin.apt_seq, umd_nm: pin.umd_nm, apt_nm: pin.apt_nm });
+    setTab("complex");
+    setPanelOpen(true);
+  }, []);
+
+  /** 순위에서 지역을 누르면 지도가 그곳으로 간다. */
   const handleSelectRegionFromRanking = (nextSgg) => {
     const found = regions.find((region) => region.sgg_cd === nextSgg);
     if (found && found.sido_cd) setSidoCd(found.sido_cd);
     setSggCd(nextSgg);
     setUmdNm("");
-    setTab("trade");
+    setFocusRequest({ level: "sgg", code: nextSgg });
   };
 
   const params = useMemo(
@@ -266,10 +316,28 @@ function App() {
     [sggCd, umdNm, fromYm, toYm]
   );
 
+  // 단지 탭에서만 단지 목록을 받는다(거래 많은 순). 지역·검색어가 바뀌면 다시 받는다.
+  useEffect(() => {
+    if (tab !== "complex" || !status || !status.ready || !currentType.available || !sggCd) {
+      return;
+    }
+    let alive = true;
+    setLoading(true);
+    fetchComplexes(propertyType, { sggCd, umdNm, q: complexKeyword, limit: 200 })
+      .then((data) => alive && setComplexes(data.items || []))
+      .catch((e) => alive && setLoadError(e.message))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [tab, status, currentType.available, propertyType, sggCd, umdNm, complexKeyword]);
+
   const reload = useCallback(() => {
     if (!status || !status.ready || !currentType.available || !fromYm || !toYm) return;
     setLoading(true);
     setLoadError("");
+
+    if (tab === "complex") return; // 단지는 위 전용 효과가 받아 온다
 
     const jobs = [];
     if (tab === "trade") {
@@ -300,21 +368,10 @@ function App() {
     if (window.SjLabAuth) window.SjLabAuth.logout();
   };
 
-  const getSubTabStyle = (key) => {
-    if (tab === key) {
-      return { ...subTabStyle, background: "#2563eb", color: "#ffffff", borderColor: "#2563eb" };
-    }
-    return {
-      ...subTabStyle,
-      background: hoveredSubTab === key ? "#eff6ff" : "#ffffff",
-      color: hoveredSubTab === key ? "#1e40af" : "#475569",
-    };
-  };
-
-  const selectedSidoName = useMemo(() => {
-    const sido = sidoList.find((item) => item.sido_cd === sidoCd);
-    return sido ? sido.sido_nm : "전국";
-  }, [sidoList, sidoCd]);
+  const monthOptions = useMemo(
+    () => buildMonthOptions(meta && meta.trade_from_ym, meta && meta.trade_to_ym),
+    [meta]
+  );
 
   const selectedRegionName = useMemo(() => {
     if (!sggCd) {
@@ -359,7 +416,7 @@ function App() {
 
       {page === "data" && loadError && <div style={errorBannerStyle}>{loadError}</div>}
 
-      <main style={mainStyle}>
+      <main style={page === "data" ? mapMainStyle : mainStyle}>
         {page === "about" && <About meta={meta} regionCount={regions.length} logUrl={LOG_URL} />}
         {page === "contact" && <Contact />}
 
@@ -367,257 +424,94 @@ function App() {
         {page === "data" && (!currentType.available ? (
           <ComingSoon type={currentType} onGoApartment={() => setPropertyType("apt")} />
         ) : (
-          <>
-            {/* 데이터 범위 요약 */}
-            {meta && (
-              <div style={summaryRowStyle}>
-                {/* 건수는 통계 기반 추정치라 "약"을 붙인다 — 정확히 세면 2,100만 행 때문에
-                    화면이 열릴 때마다 30초를 기다려야 한다(서버 주석 참고) */}
-                <div style={summaryCardStyle}>
-                  <div style={summaryLabelStyle}>매매 거래</div>
-                  <div style={summaryValueStyle}>
-                    {meta.rows_estimated ? "약 " : ""}
-                    {formatCount(meta.trade_rows)}건
-                  </div>
-                  <div style={summaryMetaStyle}>
-                    {formatYmLong(meta.trade_from_ym)} ~ {formatYmLong(meta.trade_to_ym)}
-                  </div>
-                </div>
-                <div style={summaryCardStyle}>
-                  <div style={summaryLabelStyle}>전월세 거래</div>
-                  <div style={summaryValueStyle}>
-                    {meta.rows_estimated ? "약 " : ""}
-                    {formatCount(meta.rent_rows)}건
-                  </div>
-                  <div style={summaryMetaStyle}>
-                    {formatYmLong(meta.rent_from_ym)} ~ {formatYmLong(meta.rent_to_ym)}
-                  </div>
-                </div>
-                <div style={summaryCardStyle}>
-                  <div style={summaryLabelStyle}>수집 지역</div>
-                  {/* 지역 수는 목록 길이로 센다 — 서버에서 count(distinct) 하면 전건을 훑어 느리다 */}
-                  <div style={summaryValueStyle}>{formatCount(regions.length)}개</div>
-                  <div style={summaryMetaStyle}>시·군·구 단위</div>
-                </div>
-                <div style={summaryCardStyle}>
-                  <div style={summaryLabelStyle}>마지막 적재</div>
-                  <div style={summaryValueStyle}>
-                    {meta.trade_last_load ? String(meta.trade_last_load).slice(0, 10) : "-"}
-                  </div>
-                  <div style={summaryMetaStyle}>매일 06시·07시 수집</div>
-                </div>
-              </div>
-            )}
-
-            {/* 보기 전환 — 매물 종류는 헤더에, 보기(매매·전월세·순위)는 본문에 둔다 */}
-            <div style={subTabRowStyle} role="tablist" aria-label="보기 전환">
-              {SUB_TABS.map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === key}
-                  style={getSubTabStyle(key)}
-                  onClick={() => setTab(key)}
-                  onMouseEnter={() => setHoveredSubTab(key)}
-                  onMouseLeave={() => setHoveredSubTab(null)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* 조건 */}
-            <div style={cardStyle}>
-              <div style={filterRowStyle}>
-                {/* 지역은 시도 → 시군구 → 읍면동 3단계. 좁히면 조회가 빨라진다(전국은 몇 초). */}
-                <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>시 · 도</span>
-                  <select style={selectStyle} value={sidoCd} onChange={(e) => handleSelectSido(e.target.value)}>
-                    {/* 전국은 평균·중위 계산 때문에 몇 초 걸린다 — 고를 수는 있게 두고 미리 알려 준다 */}
-                    <option value="">전국 (조회가 몇 초 걸립니다)</option>
-                    {sidoList.map((sido) => (
-                      <option key={sido.sido_cd} value={sido.sido_cd}>
-                        {sido.sido_nm} ({formatCount(sido.deal_count)})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>시 · 군 · 구</span>
-                  <select
-                    style={selectStyle}
-                    value={sggCd}
-                    disabled={!sidoCd}
-                    onChange={(e) => handleSelectSgg(e.target.value)}
-                  >
-                    <option value="">{sidoCd ? "시·도 전체 (몇 초 걸립니다)" : "시·도를 먼저 고르세요"}</option>
-                    {sggList.map((region) => (
-                      <option key={region.sgg_cd} value={region.sgg_cd}>
-                        {region.sgg_nm} ({formatCount(region.deal_count)})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>읍 · 면 · 동</span>
-                  <select
-                    style={selectStyle}
-                    value={umdNm}
-                    disabled={!sggCd || emdList.length === 0}
-                    onChange={(e) => setUmdNm(e.target.value)}
-                  >
-                    <option value="">{sggCd ? "시·군·구 전체" : "시·군·구를 먼저 고르세요"}</option>
-                    {emdList.map((emd) => (
-                      <option key={emd.umd_nm} value={emd.umd_nm}>
-                        {emd.umd_nm} ({formatCount(emd.deal_count)})
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>시작</span>
-                  <select style={selectStyle} value={fromYm} onChange={(e) => setFromYm(e.target.value)}>
-                    {buildMonthOptions(meta && meta.trade_from_ym, meta && meta.trade_to_ym).map((ym) => (
-                      <option key={ym} value={String(ym)}>
-                        {formatYmLong(ym)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label style={fieldStyle}>
-                  <span style={fieldLabelStyle}>종료</span>
-                  <select style={selectStyle} value={toYm} onChange={(e) => setToYm(e.target.value)}>
-                    {buildMonthOptions(meta && meta.trade_from_ym, meta && meta.trade_to_ym).map((ym) => (
-                      <option key={ym} value={String(ym)}>
-                        {formatYmLong(ym)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                {tab === "trade" && (
-                  <label style={{ ...fieldStyle, flex: 1, minWidth: "180px" }}>
-                    <span style={fieldLabelStyle}>단지명</span>
-                    <input
-                      type="text"
-                      style={inputStyle}
-                      value={aptNm}
-                      placeholder="예: 래미안 (일부만 입력해도 됩니다)"
-                      onChange={(e) => setAptNm(e.target.value)}
-                    />
-                  </label>
-                )}
-              </div>
-              <p style={filterNoteStyle}>
-                지금 보는 범위: <strong>{currentType.label}</strong> · <strong>{selectedRegionName}</strong> ·{" "}
-                {formatYmLong(fromYm)} ~ {formatYmLong(toYm)}
-                {loading ? " · 불러오는 중…" : ""}
-              </p>
-            </div>
-
-            {/* 본문 */}
-            {tab === "trade" && (
-              <>
-                <div style={cardStyle}>
-                  <h2 style={sectionTitleStyle}>매매 월별 추세</h2>
-                  <TrendChart items={tradeMonthly} lineKey="avg_amount" lineLabel="평균 거래가" />
-                </div>
-                <div style={cardStyle}>
-                  <h2 style={sectionTitleStyle}>최근 거래</h2>
-                  <p style={sectionNoteStyle}>계약일이 최근인 순으로 최대 50건을 보여 줍니다.</p>
-                  <TradeTable items={trades} loading={loading} />
-                </div>
-              </>
-            )}
-
-            {tab === "rent" && (
-              <>
-                <div style={cardStyle}>
-                  <h2 style={sectionTitleStyle}>전세 보증금 월별 추세</h2>
-                  <p style={sectionNoteStyle}>월세가 0인 계약을 전세로 봅니다.</p>
-                  <TrendChart
-                    items={rentMonthly}
-                    lineKey="avg_jeonse_deposit"
-                    lineLabel="평균 전세 보증금"
-                    lineColor="#047857"
-                    barColor="#bbf7d0"
-                  />
-                </div>
-                <div style={cardStyle}>
-                  <h2 style={sectionTitleStyle}>전세 · 월세 구성</h2>
-                  <RentCompositionTable items={rentMonthly} loading={loading} />
-                </div>
-              </>
-            )}
-
-            {tab === "ranking" && (
-              <div style={cardStyle}>
-                <h2 style={sectionTitleStyle}>지역별 평균 매매가</h2>
-                <p style={sectionNoteStyle}>
-                  {sidoCd ? `${selectedSidoName} 안에서` : "전국"} 선택한 기간의 평균입니다.
-                  거래가 10건 미만인 지역은 평균이 크게 튀어 제외했습니다.
-                  지역명을 누르면 그 지역으로 바꿔 봅니다.
-                </p>
-                <RankingList
-                  items={ranking}
-                  loading={loading}
-                  onSelectRegion={handleSelectRegionFromRanking}
+          <div style={mapShellStyle}>
+            {/* 지도가 본문 전체다 — 헤더만 남기고 호갱노노처럼 지도 위에서 모든 걸 한다 */}
+            <EstateMap
+              propertyType={propertyType}
+              fromYm={fromYm}
+              toYm={toYm}
+              focusRequest={focusRequest}
+              selectedAptSeq={selectedComplex ? selectedComplex.apt_seq : ""}
+              onRegionChange={handleMapRegionChange}
+              onSelectComplex={handleSelectComplexFromMap}
+              onPinStatus={(info) =>
+                setPinInfo({
+                  ready: Boolean(info.coordinates_ready),
+                  total: info.complex_total,
+                  geocoded: info.complex_geocoded,
+                })
+              }
+            >
+              {/* 단지를 고르면(핀 클릭·목록 클릭) 지도 위에 월별 시세 팝업이 열린다.
+                  좌표가 있는 단지는 그 핀에 붙고, 아직 없으면 지도 위에 떠 있는 카드가 된다 —
+                  지도가 붙일 자리를 스스로 판단하므로 여기서는 내용만 넘긴다. */}
+              {selectedComplex && (
+                <ComplexPopup
+                  propertyType={propertyType}
+                  aptSeq={selectedComplex.apt_seq}
+                  umdNm={selectedComplex.umd_nm}
+                  aptNm={selectedComplex.apt_nm}
+                  fromYm={fromYm}
+                  toYm={toYm}
+                  onClose={() => setSelectedComplex(null)}
                 />
-              </div>
-            )}
-          </>
+              )}
+            </EstateMap>
+            <MapSidePanel
+              open={panelOpen}
+              onToggle={() => setPanelOpen((prev) => !prev)}
+              regionName={selectedRegionName}
+              level={mapLevel}
+              tab={tab}
+              tabs={PANEL_TABS}
+              onSelectTab={setTab}
+              sidoList={sidoList}
+              sggList={sggList}
+              emdList={emdList}
+              sidoCd={sidoCd}
+              sggCd={sggCd}
+              umdNm={umdNm}
+              onSelectSido={handleSelectSido}
+              onSelectSgg={handleSelectSgg}
+              onSelectUmd={handleSelectUmd}
+              monthOptions={monthOptions}
+              fromYm={fromYm}
+              toYm={toYm}
+              onChangeFromYm={setFromYm}
+              onChangeToYm={setToYm}
+              complexes={complexes}
+              complexKeyword={complexKeyword}
+              onChangeComplexKeyword={setComplexKeyword}
+              selectedComplex={selectedComplex}
+              onSelectComplex={setSelectedComplex}
+              onClearComplex={() => setSelectedComplex(null)}
+              tradeMonthly={tradeMonthly}
+              rentMonthly={rentMonthly}
+              trades={trades}
+              ranking={ranking}
+              onSelectRegionFromRanking={handleSelectRegionFromRanking}
+              loading={loading}
+              pinInfo={pinInfo}
+            />
+          </div>
         ))}
       </main>
     </div>
   );
 }
 
-/** 전세·월세 건수와 평균을 월별 표로. 차트로 겹쳐 그리면 읽기 어려워 표로 둔다. */
-function RentCompositionTable({ items, loading }) {
-  if (loading) return <p style={sectionNoteStyle}>불러오는 중…</p>;
-  if (!items || items.length === 0) return <p style={sectionNoteStyle}>표시할 데이터가 없습니다.</p>;
-
-  const rows = items.slice().reverse();
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", minWidth: "620px" }}>
-        <thead>
-          <tr>
-            <th style={rentThStyle}>기간</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>전체</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>전세</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>월세</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>평균 전세금</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>평균 월세 보증금</th>
-            <th style={{ ...rentThStyle, textAlign: "right" }}>평균 월세</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.ym}>
-              <td style={rentTdStyle}>{formatYmLong(row.ym)}</td>
-              <td style={rentNumStyle}>{formatCount(row.deal_count)}</td>
-              <td style={rentNumStyle}>{formatCount(row.jeonse_count)}</td>
-              <td style={rentNumStyle}>{formatCount(row.wolse_count)}</td>
-              <td style={rentNumStyle}>{formatManwon(row.avg_jeonse_deposit)}</td>
-              <td style={rentNumStyle}>{formatManwon(row.avg_wolse_deposit)}</td>
-              <td style={rentNumStyle}>
-                {row.avg_monthly_rent ? `${Number(row.avg_monthly_rent).toLocaleString()}만` : "-"}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default App;
+
+/**
+ * 지도 화면의 본문 — 헤더 아래를 모두 지도가 쓴다.
+ *
+ * 기존 화면은 가운데 정렬된 카드 묶음이었지만, 지도 기반 서비스에서는 지도가 작아 보이면
+ * 아무것도 할 수 없다. 그래서 여백·최대폭을 두지 않고 남은 높이를 전부 준다.
+ */
+const mapMainStyle = { flex: 1, minHeight: 0, position: "relative" };
+
+const mapShellStyle = { position: "absolute", inset: 0 };
+
 
 const pageStyle = { display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8fafc" };
 
@@ -645,101 +539,4 @@ const mainStyle = {
   margin: "0 auto",
 };
 
-const summaryRowStyle = { display: "flex", gap: "0.8rem", flexWrap: "wrap", marginBottom: "1rem" };
 
-const summaryCardStyle = {
-  flex: "1 1 180px",
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: "12px",
-  padding: "0.8rem 0.95rem",
-};
-
-const summaryLabelStyle = { fontSize: "0.74rem", color: "#64748b", marginBottom: "0.2rem" };
-
-const summaryValueStyle = {
-  fontFamily: "Poppins, Inter, sans-serif",
-  fontSize: "1.3rem",
-  fontWeight: 600,
-  color: "#1e3a8a",
-  lineHeight: 1.2,
-};
-
-const summaryMetaStyle = { fontSize: "0.72rem", color: "#94a3b8", marginTop: "0.2rem" };
-
-const subTabRowStyle = { display: "flex", gap: "0.4rem", marginBottom: "1rem", flexWrap: "wrap" };
-
-const subTabStyle = {
-  border: "1px solid #cbd5e1",
-  borderRadius: "999px",
-  padding: "0.42rem 1.1rem",
-  fontSize: "0.86rem",
-  fontWeight: 500,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-  transition: "background 0.18s ease, color 0.18s ease",
-};
-
-const cardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
-  borderRadius: "12px",
-  padding: "1.1rem 1.25rem",
-  marginBottom: "1rem",
-};
-
-const filterRowStyle = { display: "flex", gap: "0.8rem", flexWrap: "wrap", alignItems: "flex-end" };
-
-const fieldStyle = { display: "flex", flexDirection: "column", gap: "0.25rem" };
-
-const fieldLabelStyle = { fontSize: "0.74rem", color: "#64748b" };
-
-const selectStyle = {
-  border: "1px solid #cbd5e1",
-  borderRadius: "6px",
-  padding: "0.42rem 0.5rem",
-  fontSize: "0.85rem",
-  color: "#0f172a",
-  background: "#ffffff",
-  minWidth: "150px",
-};
-
-const inputStyle = {
-  border: "1px solid #cbd5e1",
-  borderRadius: "6px",
-  padding: "0.42rem 0.5rem",
-  fontSize: "0.85rem",
-  color: "#0f172a",
-  width: "100%",
-};
-
-const filterNoteStyle = { fontSize: "0.78rem", color: "#64748b", marginTop: "0.7rem" };
-
-const sectionTitleStyle = {
-  fontFamily: "Poppins, Inter, sans-serif",
-  fontSize: "1rem",
-  fontWeight: 600,
-  color: "#0f172a",
-  marginBottom: "0.3rem",
-};
-
-const sectionNoteStyle = { fontSize: "0.78rem", color: "#64748b", marginBottom: "0.7rem", lineHeight: 1.6 };
-
-const rentThStyle = {
-  textAlign: "left",
-  color: "#64748b",
-  fontWeight: 500,
-  fontSize: "0.74rem",
-  padding: "0.45rem 0.6rem",
-  borderBottom: "1px solid #e2e8f0",
-  whiteSpace: "nowrap",
-};
-
-const rentTdStyle = {
-  padding: "0.5rem 0.6rem",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#334155",
-  whiteSpace: "nowrap",
-};
-
-const rentNumStyle = { ...rentTdStyle, textAlign: "right" };

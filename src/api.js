@@ -106,6 +106,27 @@ export const fetchRentMonthly = (type, params) => get(`/${type}/rent/monthly`, p
 export const fetchTrades = (type, params) => get(`/${type}/trade`, params);
 export const fetchRanking = (type, params) => get(`/${type}/trade/ranking`, params);
 
+// 지도용 지역 경계 + 평균가(GeoJSON). 좌표가 없어도 되는 지도다 — 경계는 이미 DB 에 있다.
+// level=sido(전국) / sgg(시군구, sidoCd 로 좁힘) / emd(한 시군구 안의 읍면동).
+export const fetchMapRegions = (type, params) => get(`/${type}/map/regions`, params);
+
+// 화면 영역 안의 아파트 단지 핀(GeoJSON Point). bbox 는 EPSG:3857 의 minX,minY,maxX,maxY 다.
+// 좌표를 아직 못 받았으면 빈 목록 + coordinates_ready:false 로 온다(오류가 아니다).
+export const fetchMapComplexes = (type, params) => get(`/${type}/map/complexes`, params);
+
+// ── 단지(아파트) 단위 ──────────────────────────────────────────────────────
+// 단지 키는 apt_seq(예: 11680-218) 다. 서버가 앞 5자리를 시군구 코드로 써서 조회를 좁히므로
+// 읍면동(umdNm)까지 함께 넘기면 더 빠르다.
+export const fetchComplexes = (type, params) => get(`/${type}/complexes`, params);
+export const fetchComplexDetail = (type, aptSeq, umdNm) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}`, { umdNm });
+export const fetchComplexMonthly = (type, aptSeq, params) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/monthly`, params);
+export const fetchComplexRentMonthly = (type, aptSeq, params) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/rent/monthly`, params);
+export const fetchComplexTrades = (type, aptSeq, params) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/trades`, params);
+
 // ---------------------------------------------------------------------------
 // 표시 도우미 — 원천 금액 단위가 만원이라 그대로 보여 주면 읽기 어렵다
 // ---------------------------------------------------------------------------
@@ -120,6 +141,21 @@ export function formatManwon(manwon) {
     return rest > 0 ? `${eok}억 ${rest.toLocaleString()}만` : `${eok}억`;
   }
   return `${rest.toLocaleString()}만`;
+}
+
+/**
+ * 지도 라벨용 짧은 금액. "12.5억" / "7,800만" 처럼 한 줄에 들어가게 줄인다.
+ *
+ * 핀과 경계 라벨은 좁은 자리에 수십 개가 함께 뜨므로 `formatManwon()`("8억 5,000만")은 너무 길다.
+ */
+export function formatManwonShort(manwon) {
+  const value = Number(manwon);
+  if (!Number.isFinite(value) || value === 0) return "-";
+  if (value >= 10000) {
+    const eok = value / 10000;
+    return `${eok >= 10 ? Math.round(eok) : Math.round(eok * 10) / 10}억`;
+  }
+  return `${Math.round(value).toLocaleString()}만`;
 }
 
 export function formatCount(n) {
