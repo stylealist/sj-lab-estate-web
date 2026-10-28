@@ -1,15 +1,22 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Map from "ol/Map";
-import Overlay from "ol/Overlay";
 import View from "ol/View";
 import TileLayer from "ol/layer/Tile";
 import VectorLayer from "ol/layer/Vector";
 import VectorSource from "ol/source/Vector";
 import XYZ from "ol/source/XYZ";
 import GeoJSON from "ol/format/GeoJSON";
-import { Fill, Stroke, Style, Text, Circle as CircleStyle } from "ol/style";
+import { Fill, Icon, Stroke, Style, Text } from "ol/style";
 import { fromLonLat } from "ol/proj";
-import { fetchMapComplexes, fetchMapRegions, formatCount, formatManwon, formatManwonShort } from "../api";
+import {
+  fetchComplexBoundary,
+  fetchMapComplexes,
+  fetchMapRegions,
+  formatAreaShort,
+  formatCount,
+  formatManwon,
+  formatManwonShort,
+} from "../api";
 
 /**
  * 부동산 지도 — 호갱노노식 화면의 본체.
@@ -24,6 +31,11 @@ import { fetchMapComplexes, fetchMapRegions, formatCount, formatManwon, formatMa
  * <p><b>단계를 정하는 방법</b>: 줌으로 단계를, <b>지도 중심이 어느 지역 안에 있는지</b>로 대상
  * 코드를 정한다. 그래서 시도 경계는 보이지 않을 때도 들고 있다 — 다른 시도로 밀고 갔을 때
  * "지금 어디를 보고 있는지"를 그것으로 판단한다(서버에 역지오코딩을 묻지 않는다).
+ *
+ * <p><b>단지 상세는 이 지도가 아니라 왼쪽 패널에서 본다</b>(2026-10-21). 핀을 누르면
+ * `onSelectComplex` 로 알리고, 지도는 그 단지의 핀을 강조하고 테두리를 그리는 일만 한다.
+ * 2026-10-15 ~ 10-21 에는 지도 위에 팝업(Overlay)을 띄웠는데 창이 작아 월별 표가 읽히지 않았다
+ * (그 코드는 `sj-lab/trash/2026-10-21/` 에 있다).
  *
  * <p>지도 라이브러리는 OpenLayers 다(지도 서비스 `sj-lab-mapservice` 와 같은 것).
  */
@@ -40,6 +52,10 @@ const PIN_ZOOM = 13;
 
 /** 핀 1회 조회 상한(서버 상한 500과 맞춘다). */
 const PIN_LIMIT = 300;
+
+/** "핀 준비 안 됨"일 때 다시 물어보는 간격과 횟수(약 1분간 지켜본다). */
+const PIN_RETRY_MS = 8000;
+const PIN_RETRY_MAX = 8;
 
 /**
  * OpenLayers 가 쓰는 최소 스타일.
@@ -84,18 +100,19 @@ function EstateMap({
   onRegionChange,
   onSelectComplex,
   onPinStatus,
-  children,
+  onBoundaryArea,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
-  // 단지 팝업을 핀 위에 띄우는 그릇(OpenLayers Overlay 가 위치를 잡는다)
-  const popupHostRef = useRef(null);
-  const overlayRef = useRef(null);
   // 단계별 경계를 각자 담아 둔다 — 보이지 않는 단계도 "지금 어디인가"를 판단하는 데 쓴다
   const sidoSourceRef = useRef(new VectorSource());
   const sggSourceRef = useRef(new VectorSource());
   const emdSourceRef = useRef(new VectorSource());
   const pinSourceRef = useRef(new VectorSource());
+  // 고른 단지의 테두리(연속지적도 필지). 한 번에 하나만 담는다 — 폴리곤이 무겁다
+  const boundarySourceRef = useRef(new VectorSource());
+  // 핀 재시도 타이머(화면을 떠나면 끈다)
+  const retryTimerRef = useRef(null);
   const layersRef = useRef({});
 
   const [level, setLevel] = useState("emd");
@@ -107,11 +124,13 @@ function EstateMap({
   const [error, setError] = useState("");
   const [hovered, setHovered] = useState(null);
   const [pinInfo, setPinInfo] = useState(null);
+  // "핀 준비 안 됨" 응답을 받았을 때 **스스로 다시 물어보기 위한** 횟수 세기.
+  // 서버가 잠깐 끊겼다 돌아오는 동안(재기동·DB 연결 끊김) 한 번 받은 "준비 중"을 계속 들고 있으면
+  // 화면에는 끝까지 핀이 없다 — 사용자가 새로 고쳐야 했다(2026-10-22 두 번 발생).
+  const [pinRetry, setPinRetry] = useState(0);
   const [range, setRange] = useState({ min: 0, max: 0 });
-  // 팝업이 핀에 붙었는지(좌표가 있는 단지인지). 좌표가 아직 없으면 지도 위에 떠 있게 한다.
-  const [anchored, setAnchored] = useState(false);
-  // 핀이 새로 들어오면 팝업 위치를 다시 찾아야 한다 — 그 신호
-  const [pinStamp, setPinStamp] = useState(0);
+  // 지역 색칠(경계)을 보일지. 핀이 뜨는 줌에서는 경계선·지역 라벨이 핀과 겹쳐 어지럽다.
+  const [showRegions, setShowRegions] = useState(true);
 
   // 스타일 함수는 지도 생성 시 한 번 묶이므로, 그 안에서 읽는 값은 ref 로 둔다
   const rangeRef = useRef(range);
@@ -120,6 +139,9 @@ function EstateMap({
   selectedRef.current = selectedAptSeq;
   const onSelectComplexRef = useRef(onSelectComplex);
   onSelectComplexRef.current = onSelectComplex;
+  // 테두리 넓이를 바깥(상세 패널)에 알리는 통로. 효과의 의존성이 흔들리지 않게 ref 로 둔다.
+  const onBoundaryAreaRef = useRef(onBoundaryArea);
+  onBoundaryAreaRef.current = onBoundaryArea;
   // 지도가 아직 안 뜬 상태에서 들어온 "이 지역으로 가자" 요청을 기억해 둔다
   const pendingFocusRef = useRef(null);
 
@@ -160,13 +182,21 @@ function EstateMap({
       declutter: true,
       visible: true,
     });
+    // 테두리는 핀 **아래**에 둔다 — 위에 두면 반투명 면이 가격 라벨을 덮는다
+    const boundaryLayer = new VectorLayer({
+      source: boundarySourceRef.current,
+      style: boundaryStyle,
+      zIndex: 5,
+    });
     const pinLayer = new VectorLayer({
       source: pinSourceRef.current,
       style: (feature) => pinStyle(feature, selectedRef.current),
       declutter: true,
       zIndex: 10,
     });
-    layersRef.current = { sido: sidoLayer, sgg: sggLayer, emd: emdLayer, pin: pinLayer };
+    layersRef.current = {
+      sido: sidoLayer, sgg: sggLayer, emd: emdLayer, pin: pinLayer, boundary: boundaryLayer,
+    };
 
     const map = new Map({
       target: containerRef.current,
@@ -183,6 +213,7 @@ function EstateMap({
         sidoLayer,
         sggLayer,
         emdLayer,
+        boundaryLayer,
         pinLayer,
       ],
       // 기본 위치는 화면 기본 지역(서울 강남구)에 맞춘다
@@ -244,17 +275,6 @@ function EstateMap({
       }
     });
 
-    // 단지 팝업을 핀에 붙여 둔다. 지도를 밀면 팝업도 그 핀을 따라간다.
-    // `autoPan` 은 팝업이 화면 밖으로 걸칠 때 지도를 살짝 밀어 전체가 보이게 한다.
-    const overlay = new Overlay({
-      element: popupHostRef.current,
-      positioning: "bottom-center",
-      offset: [0, -18],
-      autoPan: { animation: { duration: 250 }, margin: 24 },
-    });
-    map.addOverlay(overlay);
-    overlayRef.current = overlay;
-
     mapRef.current = map;
     // 처음 한 번은 현재 뷰 상태를 그대로 읽어 조회를 시작한다(moveend 를 기다리지 않도록)
     syncView();
@@ -266,14 +286,25 @@ function EstateMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 보이는 레이어를 단계에 맞춘다
+  /**
+   * 보이는 레이어를 단계에 맞춘다.
+   *
+   * **핀이 뜨는 줌(PIN_ZOOM 이상)에서는 지역 경계를 감춘다** — 읍면동 경계선과 지역 평균가
+   * 라벨이 아파트 핀·가격 라벨과 겹쳐 글자가 서로 밟힌다. 그 줌에서는 이미 단지가 주인공이고,
+   * 지역 색칠은 멀리서 "어디가 비싼가"를 볼 때 쓰는 것이다.
+   * 그래도 보고 싶을 때가 있어 버튼으로 다시 켤 수 있게 했다.
+   */
   useEffect(() => {
     const layers = layersRef.current;
     if (!layers.sido) return;
-    layers.sido.setVisible(level === "sido");
-    layers.sgg.setVisible(level === "sgg");
-    layers.emd.setVisible(level === "emd");
-  }, [level]);
+    const on = showRegions && zoom < PIN_ZOOM;
+    layers.sido.setVisible(on && level === "sido");
+    layers.sgg.setVisible(on && level === "sgg");
+    // **읍면동 경계는 그리지 않는다**(2026-10-28 사용자 요청). 선이 촘촘한데다 지역 평균가
+    // 라벨까지 붙어, 단지 영역·핀과 겹치면 지도가 읽히지 않는다. 경계는 계속 받아 둔다 —
+    // 패널에서 읍면동을 고르면 그 자리로 지도를 옮기는 데 쓴다(focusRequest).
+    layers.emd.setVisible(false);
+  }, [level, zoom, showRegions]);
 
   // 지금 보고 있는 지역을 바깥(패널)에 알린다
   useEffect(() => {
@@ -398,17 +429,28 @@ function EstateMap({
         if (!probeOnly && geojson.features && geojson.features.length > 0) {
           pinSourceRef.current.addFeatures(geoJsonFormat.readFeatures(geojson));
         }
-        // 핀이 바뀌었으니 열려 있는 팝업을 다시 그 핀에 붙인다
-        setPinStamp((prev) => prev + 1);
+        // 준비 안 됐다고 오면 **몇 번 더 물어본다** — 서버가 돌아오면 저절로 핀이 뜬다
+        if (!geojson.coordinates_ready && pinRetry < PIN_RETRY_MAX) {
+          retryTimerRef.current = setTimeout(() => setPinRetry((prev) => prev + 1), PIN_RETRY_MS);
+        }
       })
       .catch(() => {
-        if (alive) pinSourceRef.current.clear();
+        if (!alive) return;
+        pinSourceRef.current.clear();
+        // 호출 자체가 실패해도 같은 이유로 다시 물어본다(게이트웨이 기동 중 등)
+        if (pinRetry < PIN_RETRY_MAX) {
+          retryTimerRef.current = setTimeout(() => setPinRetry((prev) => prev + 1), PIN_RETRY_MS);
+        }
       });
     return () => {
       alive = false;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [propertyType, pinBboxKey, fromYm, toYm]);
+  }, [propertyType, pinBboxKey, fromYm, toYm, pinRetry]);
 
   // 고른 단지가 바뀌면 핀 강조를 다시 그린다
   useEffect(() => {
@@ -416,39 +458,38 @@ function EstateMap({
   }, [selectedAptSeq]);
 
   /**
-   * 열린 팝업을 그 단지 핀에 붙인다.
+   * 고른 단지의 테두리를 받아 그린다.
    *
-   * <p>좌표가 아직 없는 단지(목록에서 고른 경우)는 붙일 핀이 없다 — 그때는 Overlay 위치를
-   * 비우고 지도 위에 떠 있는 카드로 띄운다(`anchored === false`). 좌표 수집이 끝나면 같은
-   * 팝업이 핀에 붙으므로 화면을 고칠 일이 없다.
+   * 핀만 있으면 단지가 어디까지인지 알 수 없어 호갱노노처럼 필지 경계를 겹쳐 준다.
+   * **핀 응답에 같이 담지 않는다** — 폴리곤 하나가 수십 KB 라 화면의 300개를 한꺼번에 보내면
+   * 지도를 움직일 때마다 수 MB 가 오간다. 그래서 고른 하나만 따로 받는다.
+   * 아직 못 받은 단지는 오류가 아니라 available:false 로 오므로 조용히 비운다.
    */
-  const hasPopup = Boolean(children);
-
   useEffect(() => {
-    const overlay = overlayRef.current;
-    if (!overlay) return;
-    if (!hasPopup || !selectedAptSeq) {
-      overlay.setPosition(undefined);
-      setAnchored(false);
-      return;
-    }
-    let coordinate = null;
-    pinSourceRef.current.forEachFeature((feature) => {
-      if (coordinate || feature.get("apt_seq") !== selectedAptSeq) return;
-      const geometry = feature.getGeometry();
-      if (geometry) coordinate = geometry.getCoordinates();
-    });
-    // 같은 자리면 다시 넣지 않는다 — Overlay 는 위치를 넣을 때마다 autoPan 으로 지도를 미는데,
-    // 지도가 움직이면 핀을 다시 받아(pinStamp) 이 효과가 또 돌아 서로를 밀어내게 된다.
-    const previous = overlay.getPosition();
-    const same =
-      Boolean(previous) &&
-      Boolean(coordinate) &&
-      previous[0] === coordinate[0] &&
-      previous[1] === coordinate[1];
-    if (!same) overlay.setPosition(coordinate || undefined);
-    setAnchored(Boolean(coordinate));
-  }, [hasPopup, selectedAptSeq, pinStamp]);
+    boundarySourceRef.current.clear();
+    if (onBoundaryAreaRef.current) onBoundaryAreaRef.current(null);
+    if (!selectedAptSeq) return undefined;
+
+    let alive = true;
+    fetchComplexBoundary(propertyType, selectedAptSeq)
+      .then((res) => {
+        if (!alive || !res || !res.available || !res.feature) return;
+        boundarySourceRef.current.addFeatures(geoJsonFormat.readFeatures(res.feature));
+        // 넓이는 서버가 테두리와 함께 준다(area_m2) — 상세 패널도 같은 값을 쓴다
+        const props = res.feature.properties || {};
+        const area = Number(props.area_m2);
+        if (onBoundaryAreaRef.current) {
+          onBoundaryAreaRef.current(Number.isFinite(area) && area > 0 ? area : null);
+        }
+      })
+      .catch(() => {
+        // 테두리가 없어도 핀과 상세는 그대로 동작한다 — 조용히 넘긴다
+        if (alive) boundarySourceRef.current.clear();
+      });
+    return () => {
+      alive = false;
+    };
+  }, [propertyType, selectedAptSeq]);
 
   // 패널에서 지역을 고르면 그 지역으로 지도를 옮긴다
   useEffect(() => {
@@ -475,31 +516,28 @@ function EstateMap({
 
   const levelLabel = level === "sido" ? "시 · 도" : level === "sgg" ? "시 · 군 · 구" : "읍 · 면 · 동";
 
-  // 팝업에 "핀에 붙어 있는지"를 알려 준다(붙어 있을 때만 말풍선 꼬리를 그린다)
-  const popup = React.isValidElement(children) ? React.cloneElement(children, { anchored }) : children;
+  // 실제로 경계가 보이는 중인가(줌 + 버튼). 범례·배지 문구가 이것을 따라간다.
+  const regionsVisible = showRegions && zoom < PIN_ZOOM;
 
   return (
     <div style={wrapStyle}>
       <div ref={containerRef} style={mapStyle} />
 
-      {/*
-        단지 팝업이 들어가는 그릇.
-        위치·표시 여부는 OpenLayers Overlay 가 이 요소의 style(transform·display)에 직접 쓰므로,
-        여기에 position·transform·display 를 적지 말 것 — 적으면 React 가 다시 덮어써 팝업이 엉뚱한
-        곳에 뜬다.
-      */}
-      <div ref={popupHostRef} style={popupHostStyle}>
-        {anchored ? popup : null}
-      </div>
-
-      {/* 좌표가 아직 없는 단지는 붙일 핀이 없다 — 지도 위에 떠 있는 카드로 띄운다 */}
-      {!anchored && popup && <div style={floatingPopupStyle}>{popup}</div>}
-
       {/* 지금 보고 있는 단계 — 줌으로 바뀌므로 눈에 보이게 적어 둔다 */}
       <div style={levelBadgeStyle}>
-        {levelLabel} 보기
+        {regionsVisible ? `${levelLabel} 보기` : "아파트 보기"}
         {loading ? " · 불러오는 중…" : ""}
       </div>
+
+      {/* 지역 색칠은 핀 줌에서 자동으로 꺼진다 — 다시 보고 싶을 때를 위한 버튼 */}
+      <button
+        type="button"
+        style={{ ...regionToggleStyle, color: regionsVisible ? "#2563eb" : "#64748b" }}
+        onClick={() => setShowRegions((prev) => !prev)}
+        title={regionsVisible ? "지역 경계를 감춥니다" : "지역 경계를 보여 줍니다"}
+      >
+        지역 색칠 {regionsVisible ? "켬" : "끔"}
+      </button>
 
       {error && <div style={errorBadgeStyle}>{error}</div>}
 
@@ -533,7 +571,7 @@ function EstateMap({
         </div>
       )}
 
-      {legend.length > 0 && (
+      {legend.length > 0 && regionsVisible && (
         <div style={legendStyle}>
           <span style={legendTitleStyle}>평균 거래가</span>
           <div style={legendBarStyle}>
@@ -588,6 +626,9 @@ function applyPendingFocus(pendingRef, map, source) {
 
 function describePin(props) {
   const parts = [];
+  if (props.main_pyeong && props.main_avg_amount) {
+    parts.push(`${props.main_pyeong}평 ${formatManwon(props.main_avg_amount)}`);
+  }
   if (props.avg_amount) parts.push(`평균 ${formatManwon(props.avg_amount)}`);
   if (props.deal_count) parts.push(`${formatCount(props.deal_count)}건`);
   if (props.area_min) {
@@ -628,30 +669,162 @@ function regionStyle(feature, range) {
 }
 
 /**
- * 단지 핀 — 호갱노노처럼 <b>가격이 적힌 말풍선</b>으로 그린다.
+ * 단지 테두리. 호갱노노처럼 **윤곽은 또렷하게, 안쪽은 아주 옅게** 칠한다 —
+ * 진하게 채우면 그 위의 가격 라벨과 배경 지도가 가려진다.
  *
- * <p>글자 배경(`backgroundFill`)을 쓰면 라이브러리를 더 들이지 않고도 말풍선이 된다.
- * 고른 단지는 테두리를 진하게 해 지도에서 바로 찾을 수 있게 한다.
+ * <p><b>안쪽에 그 단지가 차지하는 넓이를 적는다</b>(2026-10-21). 테두리만 보면 "넓다/좁다"는
+ * 알겠는데 얼마인지는 알 수 없어, 서버가 테두리와 함께 준 `area_m2` 를 적는다. 지도 라벨은
+ * 좁으므로 "1.2만㎡" 로 줄이고, 정확한 값(㎡·평)은 왼쪽 상세 패널에 적는다.
  */
-function pinStyle(feature, selectedAptSeq) {
-  const amount = Number(feature.get("avg_amount"));
-  const isSelected = feature.get("apt_seq") === selectedAptSeq;
-  const label = amount > 0 ? formatManwonShort(amount) : feature.get("apt_nm") || "";
+function boundaryStyle(feature) {
+  const area = Number(feature.get("area_m2"));
+  const label = area > 0 ? formatAreaShort(area) : "";
   return new Style({
-    image: new CircleStyle({
-      radius: isSelected ? 6 : 4,
-      fill: new Fill({ color: isSelected ? "#b91c1c" : "#1d4ed8" }),
-      stroke: new Stroke({ color: "#ffffff", width: 1.5 }),
-    }),
-    text: new Text({
-      text: label,
-      font: `${isSelected ? 700 : 600} 12px system-ui, sans-serif`,
-      offsetY: -16,
-      fill: new Fill({ color: "#ffffff" }),
-      backgroundFill: new Fill({ color: isSelected ? "#b91c1c" : "rgba(29, 78, 216, 0.92)" }),
-      backgroundStroke: new Stroke({ color: "#ffffff", width: 1.5 }),
-      padding: [3, 6, 3, 6],
-    }),
+    stroke: new Stroke({ color: "#f97316", width: 2.5 }),
+    fill: new Fill({ color: "rgba(249, 115, 22, 0.12)" }),
+    text: label
+      ? new Text({
+          text: label,
+          font: "700 12px system-ui, sans-serif",
+          // 가운데는 선택된 단지의 말풍선과 겹치기 쉬워 조금 아래에 적는다
+          offsetY: 16,
+          fill: new Fill({ color: "#9a3412" }),
+          stroke: new Stroke({ color: "rgba(255,255,255,0.92)", width: 3.5 }),
+          overflow: true,
+        })
+      : undefined,
+  });
+}
+
+/**
+ * 마커에 적을 두 줄 — <b>위에 대표 평형, 아래에 그 평형의 평균가</b>.
+ *
+ * <p>한 줄로 "32평 18.5억"처럼 붙여 쓰면 평수와 금액의 경계가 애매해 한 덩어리로 읽힌다.
+ * 그래서 평형을 작게 위에, 금액을 굵게 아래에 둔다.
+ *
+ * <p>대표 평형은 서버가 그 기간에 **거래가 가장 많은 평형**으로 골라 보낸다(`main_pyeong`).
+ * 단지 전체 평균(`avg_amount`)만 적으면 평형이 섞인 숫자라 "이 단지 이 평수가 얼마"로 읽히지
+ * 않는다. 평형이 없는(거래가 없는) 단지는 금액만, 금액도 없으면 단지 이름을 적는다.
+ */
+function pinLabel(feature) {
+  const pyeong = Number(feature.get("main_pyeong"));
+  const amount = Number(feature.get("main_avg_amount")) || Number(feature.get("avg_amount"));
+  const price = amount > 0 ? formatManwonShort(amount) : "";
+  if (price) {
+    return {
+      top: Number.isFinite(pyeong) && pyeong > 0 ? `${pyeong}평` : "",
+      main: price,
+    };
+  }
+  return { top: "", main: feature.get("apt_nm") || "" };
+}
+
+/** 글자 폭을 재는 캔버스(한 번만 만든다). 한글·숫자가 섞여 글자 수로 가늠하면 말풍선이 어긋난다. */
+let measureCtx = null;
+const MARKER_FONT_FAMILY = "system-ui, -apple-system, 'Malgun Gothic', sans-serif";
+const MARKER_MAIN_SIZE = 13;
+const MARKER_TOP_SIZE = 10.5;
+
+function measureLabel(text, size, weight) {
+  if (!measureCtx && typeof document !== "undefined") {
+    measureCtx = document.createElement("canvas").getContext("2d");
+  }
+  if (!measureCtx) return text.length * size * 0.68; // 캔버스를 못 쓰는 환경에서는 대략 잡는다
+  measureCtx.font = `${weight} ${size}px ${MARKER_FONT_FAMILY}`;
+  return measureCtx.measureText(text).width;
+}
+
+function escapeXml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** 말풍선 안의 아파트 글리프(작은 건물 모양). 13px 안에서도 알아볼 수 있게 창문 2개만 둔다. */
+function buildingGlyph(cx, cy, fg, bg) {
+  const x = cx - 5;
+  const y = cy - 5.5;
+  return (
+    `<path d="M${x} ${y + 11} L${x} ${y + 3.2} L${x + 4.2} ${y + 3.2} L${x + 4.2} ${y}` +
+    ` L${x + 10} ${y} L${x + 10} ${y + 11} Z" fill="${fg}"/>` +
+    `<rect x="${x + 5.6}" y="${y + 2}" width="1.5" height="1.5" fill="${bg}"/>` +
+    `<rect x="${x + 7.8}" y="${y + 2}" width="1.5" height="1.5" fill="${bg}"/>` +
+    `<rect x="${x + 1.2}" y="${y + 5.4}" width="1.5" height="1.5" fill="${bg}"/>`
+  );
+}
+
+/**
+ * 단지 마커 — 호갱노노처럼 <b>아이콘이 달린 말풍선</b>을 SVG 로 그려 쓴다.
+ *
+ * <p>예전에는 점(CircleStyle) 위에 글자를 얹었다. 글자 배경(`backgroundFill`)은 **각진 네모**라
+ * 모서리를 둥글게 할 수도, 꼬리나 아이콘을 넣을 수도 없어 "그냥 점에 숫자"로 보였다. 그래서
+ * 말풍선 전체(둥근 몸통 + 아래 꼬리 + 건물 아이콘 + 글자)를 SVG 로 만들어 `Icon` 으로 쓴다.
+ * CSS·이미지 파일을 새로 들이지 않는 방법이다(이 저장소는 css 로더가 없다).
+ *
+ * <p>같은 라벨은 다시 만들지 않고 캐시한다 — 한 화면에 300개가 뜨므로 매번 만들면 느려진다.
+ */
+const markerCache = new Map();
+
+function markerIcon(label, selected) {
+  const key = `${selected ? "S" : "N"}|${label.top}|${label.main}`;
+  const cached = markerCache.get(key);
+  if (cached) return cached;
+
+  const twoLines = Boolean(label.top);
+  const mainWidth = Math.ceil(measureLabel(label.main, MARKER_MAIN_SIZE, 700));
+  const topWidth = twoLines ? Math.ceil(measureLabel(label.top, MARKER_TOP_SIZE, 600)) : 0;
+  const textWidth = Math.max(mainWidth, topWidth);
+  const bodyHeight = twoLines ? 38 : 28;
+  const tailHeight = 7;
+  // 왼쪽 여백 + 아이콘 + 간격 + 글자 + 오른쪽 여백
+  const badgeRadius = twoLines ? 11 : 9.5;
+  const badgeCx = 5 + badgeRadius;
+  const textX = badgeCx + badgeRadius + 5;
+  const width = textX + textWidth + 11;
+  const height = bodyHeight + tailHeight;
+  const body = selected ? "#1d4ed8" : "#ffffff";
+  const border = selected ? "#1e3a8a" : "#c7d2e0";
+  const textColor = selected ? "#ffffff" : "#0f172a";
+  const topColor = selected ? "rgba(255,255,255,0.88)" : "#64748b";
+  const badge = selected ? "#ffffff" : "#2563eb";
+  const glyph = selected ? "#1d4ed8" : "#ffffff";
+  const cx = width / 2;
+  const cy = bodyHeight / 2;
+  // 두 줄이면 위(평형)·아래(금액)로 나눠 적고, 한 줄이면 가운데에 적는다
+  const topBaseline = cy - 2;
+  const mainBaseline = twoLines ? cy + 12 : cy + 4.6;
+
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+    // 꼬리를 먼저 그리고 몸통을 덮는다 — 몸통이 꼬리의 윗선을 가려 하나로 이어 보인다
+    `<polygon points="${cx - 6},${bodyHeight - 3} ${cx + 6},${bodyHeight - 3} ${cx},${height - 0.5}"` +
+    ` fill="${body}" stroke="${border}" stroke-width="1"/>` +
+    `<rect x="0.5" y="0.5" width="${width - 1}" height="${bodyHeight - 1}" rx="${twoLines ? 12 : (bodyHeight - 1) / 2}"` +
+    ` fill="${body}" stroke="${border}" stroke-width="1"/>` +
+    `<circle cx="${badgeCx}" cy="${cy}" r="${badgeRadius}" fill="${badge}"/>` +
+    buildingGlyph(badgeCx, cy, glyph, badge) +
+    (twoLines
+      ? `<text x="${textX}" y="${topBaseline}" font-family="${MARKER_FONT_FAMILY}"` +
+        ` font-size="${MARKER_TOP_SIZE}" font-weight="600" fill="${topColor}">${escapeXml(label.top)}</text>`
+      : "") +
+    `<text x="${textX}" y="${mainBaseline}" font-family="${MARKER_FONT_FAMILY}" font-size="${MARKER_MAIN_SIZE}"` +
+    ` font-weight="700" fill="${textColor}">${escapeXml(label.main)}</text>` +
+    `</svg>`;
+
+  const icon = new Icon({
+    src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+    anchor: [0.5, 1], // 꼬리 끝이 단지 좌표를 가리킨다
+    anchorXUnits: "fraction",
+    anchorYUnits: "fraction",
+  });
+  markerCache.set(key, icon);
+  return icon;
+}
+
+function pinStyle(feature, selectedAptSeq) {
+  const isSelected = feature.get("apt_seq") === selectedAptSeq;
+  return new Style({
+    image: markerIcon(pinLabel(feature), isSelected),
+    // 고른 단지는 다른 말풍선에 밀려 사라지지 않게 위로 올린다
+    zIndex: isSelected ? 20 : 1,
   });
 }
 
@@ -665,17 +838,6 @@ const wrapStyle = {
 
 const mapStyle = { width: "100%", height: "100%" };
 
-/** Overlay 가 위치를 잡으므로 크기만 정해 둔다(position·transform·display 를 넣지 말 것). */
-const popupHostStyle = { width: "412px", maxWidth: "calc(100vw - 2rem)" };
-
-const floatingPopupStyle = {
-  position: "absolute",
-  top: "3.3rem",
-  left: "50%",
-  transform: "translateX(-50%)",
-  zIndex: 6,
-};
-
 const badgeBaseStyle = {
   position: "absolute",
   padding: "0.35rem 0.7rem",
@@ -688,6 +850,14 @@ const badgeBaseStyle = {
 };
 
 const levelBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "3.6rem" };
+const regionToggleStyle = {
+  ...badgeBaseStyle,
+  top: "0.75rem",
+  left: "11.2rem",
+  cursor: "pointer",
+  border: "1px solid #e2e8f0",
+  fontWeight: 600,
+};
 
 const errorBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "50%", transform: "translateX(-50%)", color: "#b91c1c" };
 

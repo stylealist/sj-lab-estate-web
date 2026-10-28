@@ -16,7 +16,7 @@ import Header from "./components/Header";
 import ComingSoon from "./components/ComingSoon";
 import EstateMap from "./components/EstateMap";
 import MapSidePanel from "./components/MapSidePanel";
-import ComplexPopup from "./components/ComplexPopup";
+import ComplexDetail from "./components/ComplexDetail";
 import LoadingBar from "./components/LoadingBar";
 import About from "./components/About";
 import Contact from "./components/Contact";
@@ -110,6 +110,8 @@ function App() {
   const [complexes, setComplexes] = useState([]);
   const [complexKeyword, setComplexKeyword] = useState("");
   const [selectedComplex, setSelectedComplex] = useState(null);
+  // 고른 단지가 차지하는 넓이(㎡). 지도가 테두리를 받을 때 함께 알려 주고 상세 패널이 적는다.
+  const [complexAreaM2, setComplexAreaM2] = useState(null);
   // 지도가 알려 주는 "지금 보고 있는 단계"(sido / sgg / emd) — 줌에 따라 바뀐다
   const [mapLevel, setMapLevel] = useState("emd");
   // 패널에서 지역을 고르면 지도를 그곳으로 옮기라고 부탁한다(지도가 처리한 뒤 비워진다)
@@ -434,6 +436,7 @@ function App() {
               selectedAptSeq={selectedComplex ? selectedComplex.apt_seq : ""}
               onRegionChange={handleMapRegionChange}
               onSelectComplex={handleSelectComplexFromMap}
+              onBoundaryArea={setComplexAreaM2}
               onPinStatus={(info) =>
                 setPinInfo({
                   ready: Boolean(info.coordinates_ready),
@@ -441,24 +444,27 @@ function App() {
                   geocoded: info.complex_geocoded,
                 })
               }
-            >
-              {/* 단지를 고르면(핀 클릭·목록 클릭) 지도 위에 월별 시세 팝업이 열린다.
-                  좌표가 있는 단지는 그 핀에 붙고, 아직 없으면 지도 위에 떠 있는 카드가 된다 —
-                  지도가 붙일 자리를 스스로 판단하므로 여기서는 내용만 넘긴다. */}
-              {selectedComplex && (
-                <ComplexPopup
-                  propertyType={propertyType}
-                  aptSeq={selectedComplex.apt_seq}
-                  umdNm={selectedComplex.umd_nm}
-                  aptNm={selectedComplex.apt_nm}
-                  fromYm={fromYm}
-                  toYm={toYm}
-                  onClose={() => setSelectedComplex(null)}
-                />
-              )}
-            </EstateMap>
+            />
             <MapSidePanel
               open={panelOpen}
+              /* 단지를 고르면(핀 클릭·목록 클릭) 왼쪽 패널이 그 단지 상세로 바뀐다.
+                 단지마다 새로 만든다(key) — 없으면 같은 인스턴스를 재사용해 새 단지 화면에
+                 **앞 단지의 표·금액이 잠깐 남는다**(2026-10-21 수정) */
+              complexView={
+                selectedComplex ? (
+                  <ComplexDetail
+                    key={selectedComplex.apt_seq}
+                    propertyType={propertyType}
+                    aptSeq={selectedComplex.apt_seq}
+                    umdNm={selectedComplex.umd_nm}
+                    aptNm={selectedComplex.apt_nm}
+                    fromYm={fromYm}
+                    toYm={toYm}
+                    areaM2={complexAreaM2}
+                    onClose={() => setSelectedComplex(null)}
+                  />
+                ) : null
+              }
               onToggle={() => setPanelOpen((prev) => !prev)}
               regionName={selectedRegionName}
               level={mapLevel}
@@ -484,7 +490,6 @@ function App() {
               onChangeComplexKeyword={setComplexKeyword}
               selectedComplex={selectedComplex}
               onSelectComplex={setSelectedComplex}
-              onClearComplex={() => setSelectedComplex(null)}
               tradeMonthly={tradeMonthly}
               rentMonthly={rentMonthly}
               trades={trades}

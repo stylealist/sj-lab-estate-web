@@ -127,6 +127,12 @@ export const fetchComplexRentMonthly = (type, aptSeq, params) =>
 export const fetchComplexTrades = (type, aptSeq, params) =>
   get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/trades`, params);
 
+// 고른 단지의 테두리(연속지적도 필지, GeoJSON Feature).
+// 아직 못 받았으면 오류가 아니라 { available: false } 로 온다 — 테두리가 없어도 핀·팝업은 정상이다.
+// 핀 응답에 함께 담지 않는다(폴리곤 하나가 수십 KB 라 화면의 300개를 보내면 수 MB 가 된다).
+export const fetchComplexBoundary = (type, aptSeq, umdNm) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/boundary`, { umdNm });
+
 // ---------------------------------------------------------------------------
 // 표시 도우미 — 원천 금액 단위가 만원이라 그대로 보여 주면 읽기 어렵다
 // ---------------------------------------------------------------------------
@@ -184,9 +190,35 @@ export function formatDealDate(row) {
   return `${row.deal_year}-${month}-${day}`;
 }
 
-/** 전용면적(㎡)을 평으로. 1평 = 3.3058㎡ */
+/**
+ * 땅 넓이(㎡)를 "12,345㎡ · 3,734평" 으로.
+ *
+ * 단지가 차지하는 넓이는 ㎡ 와 평을 **함께** 보는 쪽이 익숙하다(아파트 면적은 평으로 말한다).
+ */
+export function formatArea(m2) {
+  const value = Number(m2);
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  return `${Math.round(value).toLocaleString()}㎡ · ${Math.round(value / 3.3058).toLocaleString()}평`;
+}
+
+/** 지도 라벨용 짧은 넓이. 1만㎡ 를 넘으면 "1.2만㎡" 로 줄인다(테두리 안에 들어가야 한다). */
+export function formatAreaShort(m2) {
+  const value = Number(m2);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value >= 10000) return `${Math.round((value / 10000) * 10) / 10}만㎡`;
+  return `${Math.round(value).toLocaleString()}㎡`;
+}
+
+/**
+ * 전용면적(㎡)을 **분양 평형**으로. 1평 = 3.3058㎡ 이고, 원천에 공급면적이 없어 통상
+ * 전용률 0.75 로 공급면적을 되짚어 환산한다 — 전용 84㎡ 가 25평이 아니라 **34평**이 된다
+ * (2026-10-28: 시장에서 부르는 이름과 달라 혼란스럽다는 지적). 서버의 평형 계산
+ * (`EstateMapper.xml`)과 **같은 식이어야** 한다.
+ *
+ * <p>대지·단지 면적에는 쓰지 말 것 — 그건 토지 면적이라 전용률과 무관하다(`formatArea`).
+ */
 export function toPyeong(m2) {
   const value = Number(m2);
   if (!Number.isFinite(value) || value <= 0) return null;
-  return Math.round((value / 3.3058) * 10) / 10;
+  return Math.round((value / 3.3058 / 0.75) * 10) / 10;
 }

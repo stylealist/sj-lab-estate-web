@@ -1,4 +1,6 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
+
+import Dropdown from "./Dropdown";
 
 /**
  * 헤더 — 지도 사이트(sj-lab-mapservice)의 `css/components/header.css` 와 같은 톤으로 맞췄다.
@@ -25,30 +27,20 @@ function Header({
   onLogout,
   hubUrl,
 }) {
+  const typeOptions = useMemo(
+    () =>
+      (propertyTypes || []).map((type) => ({
+        value: type.id,
+        label: type.available ? type.label : type.label + " (준비 중)",
+        disabled: !type.available,
+      })),
+    [propertyTypes]
+  );
+
   const [collapsed, setCollapsed] = useState(false);
   const [isHubHovered, setIsHubHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
-  const [hoveredType, setHoveredType] = useState(null);
   const [hoveredPage, setHoveredPage] = useState(null);
-
-  const getTabStyle = (type) => {
-    if (!type.available) {
-      return { ...tabBaseStyle, ...tabComingSoonStyle };
-    }
-    if (type.id === activeType) {
-      return {
-        ...tabBaseStyle,
-        background: "#2563eb",
-        color: "#ffffff",
-        boxShadow: "0 2px 8px rgba(37, 99, 235, 0.45)",
-      };
-    }
-    return {
-      ...tabBaseStyle,
-      background: hoveredType === type.id ? "rgba(148, 178, 232, 0.14)" : "transparent",
-      color: hoveredType === type.id ? "#ffffff" : "rgba(226, 232, 240, 0.72)",
-    };
-  };
 
   const getPageStyle = (page) => {
     if (page.id === activePage) {
@@ -105,28 +97,19 @@ function Header({
             <span>허브</span>
           </a>
 
-          {/* 매물 종류 탭. 준비 중인 종류는 지도의 .nav-btn.coming-soon 과 같은 모양
-              (흐리게 + 오른쪽 위 "준비중" 배지)으로 두되 누를 수는 있게 했다 —
-              눌렀을 때 무엇이 준비 중인지 화면에서 설명하는 쪽이 낫다. */}
+          {/* 매물 종류는 **셀렉트 한 개**다(2026-10-28). 종전에는 탭 묶음이어서 바로 옆
+              화면 전환 탭(실거래 · 소개 · 저장소 · 문의)과 생김새가 같아, 축이 다른 두 묶음이
+              한 줄에 늘어서 헷갈렸다(사용자 지적). 준비 안 된 종류는 고를 수 없게 두고
+              라벨에 "(준비 중)"을 붙인다 — 목록에서 빼면 앞으로 무엇이 생기는지 알 수 없다. */}
           {activePage === "data" && (
-          <nav style={navStyle} aria-label="매물 종류">
-            {propertyTypes.map((type) => (
-              <button
-                key={type.id}
-                type="button"
-                style={getTabStyle(type)}
-                onClick={() => onSelectType(type.id)}
-                onMouseEnter={() => setHoveredType(type.id)}
-                onMouseLeave={() => setHoveredType(null)}
-                onFocus={() => setHoveredType(type.id)}
-                onBlur={() => setHoveredType(null)}
-                title={type.available ? type.label : type.label + " — 서비스 준비 중"}
-              >
-                {type.label}
-                {!type.available && <span style={comingSoonBadgeStyle}>준비중</span>}
-              </button>
-            ))}
-          </nav>
+            <Dropdown
+              options={typeOptions}
+              value={activeType}
+              onChange={onSelectType}
+              tone="dark"
+              caption="매물"
+              ariaLabel="매물 종류"
+            />
           )}
 
           {/* 화면 전환(실거래 · 소개 · 저장소 · 문의) — 지도 사이트의 .nav-btn 묶음과 같은 역할.
@@ -220,6 +203,8 @@ const headerStyle = {
   boxSizing: "border-box",
   display: "flex",
   alignItems: "center",
+  // 매물 선택의 펼친 목록이 헤더 아래로 넘어가 떠야 한다(잘리면 보이지 않는다)
+  overflow: "visible",
   transition: "min-height 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
 };
 
@@ -233,7 +218,11 @@ const contentStyle = {
   alignItems: "center",
   gap: "1rem",
   width: "100%",
-  overflow: "hidden",
+  // **펼친 상태에서는 넘치게 둔다**(2026-10-28). 접기 애니메이션 때문에 `overflow: hidden` 을
+  // 늘 걸어 두었더니 매물 선택의 목록이 이 박스에서 잘려 보이지 않았고, 브라우저가 목록을
+  // 보이게 하려고 박스를 스크롤해 **헤더 내용이 위로 밀렸다**(사용자 지적).
+  // 접을 때만 숨긴다 — 그때는 안이 비어 잘릴 것도 없다.
+  overflow: "visible",
   opacity: 1,
   maxHeight: "200px",
   transition: "opacity 0.25s ease, max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease",
@@ -245,6 +234,7 @@ const contentCollapsedStyle = {
   paddingTop: 0,
   paddingBottom: 0,
   pointerEvents: "none",
+  overflow: "hidden",
 };
 
 const logoStyle = { flexShrink: 0, display: "flex", alignItems: "center", gap: "0.65rem", margin: 0 };
@@ -296,23 +286,6 @@ const tabBaseStyle = {
   whiteSpace: "nowrap",
   position: "relative",
   transition: "background 0.18s ease, color 0.18s ease",
-};
-
-const tabComingSoonStyle = { background: "transparent", color: "rgba(226, 232, 240, 0.72)", opacity: 0.6 };
-
-// 지도는 ::after 로 배지를 만들지만 인라인 스타일로는 가상 요소를 쓸 수 없어 요소로 둔다
-const comingSoonBadgeStyle = {
-  position: "absolute",
-  top: "-6px",
-  right: "-6px",
-  background: "#f59e0b",
-  color: "#ffffff",
-  fontSize: "8px",
-  lineHeight: 1.2,
-  padding: "2px 4px",
-  borderRadius: "4px",
-  fontWeight: 600,
-  letterSpacing: "0.02em",
 };
 
 const userBoxStyle = {
