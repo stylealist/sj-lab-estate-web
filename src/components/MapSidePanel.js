@@ -421,21 +421,22 @@ const panelStyle = {
 const complexPanelStyle = panelStyle;
 
 /** 상세 위의 얇은 띠 — 지금 보고 있는 지역과 접기 버튼만 둔다(단지 이름은 상세가 적는다). */
-// 지역 보기 머리말(panelHeadStyle)과 같은 딥 네이비다 — 상세로 바뀔 때 띠 색이 변하면
-// 패널이 다른 창으로 바뀐 것처럼 보인다
+// 지역 보기 머리말과 **같은 밝은 톤**이다 — 상세로 바뀔 때 띠 색이 변하면 패널이 다른 창으로
+// 바뀐 것처럼 보인다. 상세는 글씨가 작아 바탕만 한 톤 눌러 구분한다.
 const complexTopStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   gap: "0.5rem",
   padding: "0.5rem 0.6rem 0.5rem 0.95rem",
-  background: "linear-gradient(120deg, #0b1424 0%, #142440 55%, #1b3159 100%)",
+  background: "#f8fafc",
+  borderBottom: "1px solid #e2e8f0",
   flexShrink: 0,
 };
 
 const complexTopTextStyle = {
-  fontSize: "0.76rem",
-  color: "rgba(226, 232, 240, 0.72)",
+  fontSize: "0.8rem",
+  color: "#64748b",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -469,31 +470,33 @@ const handleHoverStyle = { background: "#f8fafc", color: "#1e293b" };
 
 const handleIconStyle = { transition: "transform 0.3s ease" };
 
-// 머리말은 **헤더와 같은 딥 네이비 그라데이션**이다 — 패널이 헤더에서 이어져 내려온 것처럼
-// 보이게 하는 장치다. 본문은 숫자와 표가 많아 흰 배경을 그대로 둔다(가독성).
+// 머리말은 **밝게 둔다**(2026-10-29). 한때 헤더와 같은 딥 네이비로 맞췄는데, 헤더 바로 아래에
+// 같은 어두운 띠가 또 생겨 **검은 띠가 두 층**으로 보이고 그 경계가 두드러졌다(사용자 지적).
+// 지도 서비스의 `.panel-header` 도 흰 배경 + 아래 테두리다 — 어두운 헤더와 밝은 패널이
+// 대비로 자연스럽게 나뉜다.
 const panelHeadStyle = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "space-between",
   gap: "0.6rem",
   padding: "0.85rem 0.95rem 0.75rem",
-  background: "linear-gradient(120deg, #0b1424 0%, #142440 55%, #1b3159 100%)",
-  color: "#ffffff",
+  background: "#ffffff",
+  borderBottom: "1px solid #e2e8f0",
 };
 
 const panelRegionStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "1.02rem",
   fontWeight: 600,
-  color: "#ffffff",
+  color: "#0f172a",
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
 };
 
 const panelLevelStyle = {
-  fontSize: "0.74rem",
-  color: "rgba(226, 232, 240, 0.68)",
+  fontSize: "0.78rem",
+  color: "#64748b",
   marginTop: "0.18rem",
 };
 

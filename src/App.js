@@ -116,6 +116,14 @@ function App() {
   const [mapLevel, setMapLevel] = useState("emd");
   // 패널에서 지역을 고르면 지도를 그곳으로 옮기라고 부탁한다(지도가 처리한 뒤 비워진다)
   const [focusRequest, setFocusRequest] = useState(null);
+  /**
+   * 목록에서 고른 단지로 지도를 옮기라는 요청(2026-10-29).
+   *
+   * <p>핀을 눌러 고른 경우에는 **지도를 움직이지 않는다** — 이미 보고 있는 자리라서 움직이면
+   * 눈이 따라가야 한다. 목록은 지도 밖에서 고르는 것이라 그 자리로 데려다줘야 한다.
+   * 같은 단지를 다시 눌러도 동작하도록 시각(`at`)을 함께 담는다.
+   */
+  const [complexFocus, setComplexFocus] = useState(null);
   // 단지 핀 준비 상태(좌표 수집 진행률). 지도가 알려 준다.
   const [pinInfo, setPinInfo] = useState(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -297,6 +305,16 @@ function App() {
     });
   }, []);
 
+  /** 목록에서 단지를 누르면 상세를 열고 **지도도 그 자리로** 옮긴다(핀이 보이는 줌까지 당긴다). */
+  const handleSelectComplexFromList = useCallback((complex) => {
+    setSelectedComplex(complex);
+    const lon = Number(complex && complex.lon);
+    const lat = Number(complex && complex.lat);
+    if (Number.isFinite(lon) && Number.isFinite(lat) && lon !== 0 && lat !== 0) {
+      setComplexFocus({ lon, lat, at: Date.now() });
+    }
+  }, []);
+
   /** 지도 핀을 누르면 왼쪽 패널에 그 단지를 연다(핀 라벨과 같은 값이 패널에서 자세히 보인다). */
   const handleSelectComplexFromMap = useCallback((pin) => {
     setSelectedComplex({ apt_seq: pin.apt_seq, umd_nm: pin.umd_nm, apt_nm: pin.apt_nm });
@@ -433,6 +451,7 @@ function App() {
               fromYm={fromYm}
               toYm={toYm}
               focusRequest={focusRequest}
+              complexFocus={complexFocus}
               selectedAptSeq={selectedComplex ? selectedComplex.apt_seq : ""}
               onRegionChange={handleMapRegionChange}
               onSelectComplex={handleSelectComplexFromMap}
@@ -489,7 +508,7 @@ function App() {
               complexKeyword={complexKeyword}
               onChangeComplexKeyword={setComplexKeyword}
               selectedComplex={selectedComplex}
-              onSelectComplex={setSelectedComplex}
+              onSelectComplex={handleSelectComplexFromList}
               tradeMonthly={tradeMonthly}
               rentMonthly={rentMonthly}
               trades={trades}

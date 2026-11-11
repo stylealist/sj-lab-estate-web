@@ -50,6 +50,10 @@ function levelForZoom(zoom) {
 /** 이 줌보다 당기면 단지 핀을 받는다. 더 멀리서 받으면 라벨이 수천 개 겹친다. */
 const PIN_ZOOM = 13;
 
+/** 목록에서 단지를 골랐을 때 당겨 주는 배율. 핀이 뜨는 줌(PIN_ZOOM)보다 한 단계 더 당긴다 —
+ *  단지 하나를 보려고 고른 것이므로 주변 단지까지 빽빽하게 보일 필요가 없다. */
+const COMPLEX_FOCUS_ZOOM = 15;
+
 /** 핀 1회 조회 상한(서버 상한 500과 맞춘다). */
 const PIN_LIMIT = 300;
 
@@ -96,6 +100,7 @@ function EstateMap({
   fromYm,
   toYm,
   focusRequest,
+  complexFocus,
   selectedAptSeq,
   onRegionChange,
   onSelectComplex,
@@ -130,7 +135,6 @@ function EstateMap({
   const [pinRetry, setPinRetry] = useState(0);
   const [range, setRange] = useState({ min: 0, max: 0 });
   // 지역 색칠(경계)을 보일지. 핀이 뜨는 줌에서는 경계선·지역 라벨이 핀과 겹쳐 어지럽다.
-  const [showRegions, setShowRegions] = useState(true);
 
   // 스타일 함수는 지도 생성 시 한 번 묶이므로, 그 안에서 읽는 값은 ref 로 둔다
   const rangeRef = useRef(range);
@@ -291,20 +295,22 @@ function EstateMap({
    *
    * **핀이 뜨는 줌(PIN_ZOOM 이상)에서는 지역 경계를 감춘다** — 읍면동 경계선과 지역 평균가
    * 라벨이 아파트 핀·가격 라벨과 겹쳐 글자가 서로 밟힌다. 그 줌에서는 이미 단지가 주인공이고,
-   * 지역 색칠은 멀리서 "어디가 비싼가"를 볼 때 쓰는 것이다.
-   * 그래도 보고 싶을 때가 있어 버튼으로 다시 켤 수 있게 했다.
+   * 지역별 시세는 왼쪽 패널(목록·추세·순위)에서 본다.
    */
   useEffect(() => {
     const layers = layersRef.current;
     if (!layers.sido) return;
-    const on = showRegions && zoom < PIN_ZOOM;
-    layers.sido.setVisible(on && level === "sido");
-    layers.sgg.setVisible(on && level === "sgg");
-    // **읍면동 경계는 그리지 않는다**(2026-10-28 사용자 요청). 선이 촘촘한데다 지역 평균가
-    // 라벨까지 붙어, 단지 영역·핀과 겹치면 지도가 읽히지 않는다. 경계는 계속 받아 둔다 —
-    // 패널에서 읍면동을 고르면 그 자리로 지도를 옮기는 데 쓴다(focusRequest).
+    // **지역 경계는 그리지 않는다**(2026-10-28 읍면동 · 2026-10-29 시군구·시도, 사용자 요청).
+    // 경계선과 지역 평균가 라벨이 단지 영역·핀과 겹쳐 지도가 읽히지 않았다. 지도는 아파트만
+    // 보여 주고, 지역별 시세는 왼쪽 패널(목록·추세·순위)에서 본다.
+    //
+    // **경계 자체는 계속 받아 둔다 — 받는 것까지 멈추지 말 것.**
+    // ① 지도 중심이 어느 지역 안인지 판단한다(서버에 역지오코딩을 묻지 않는 구조다)
+    // ② 패널에서 지역을 고르면 그 자리로 지도를 옮긴다(focusRequest)
+    layers.sido.setVisible(false);
+    layers.sgg.setVisible(false);
     layers.emd.setVisible(false);
-  }, [level, zoom, showRegions]);
+  }, [level, zoom]);
 
   // 지금 보고 있는 지역을 바깥(패널)에 알린다
   useEffect(() => {
@@ -505,39 +511,44 @@ function EstateMap({
     applyPendingFocus(pendingFocusRef, map, source);
   }, [focusRequest]);
 
-  const legend = useMemo(() => {
-    if (!range.max) return [];
-    const steps = 5;
-    return Array.from({ length: steps }, (_, i) => {
-      const value = range.min + ((range.max - range.min) * i) / (steps - 1);
-      return { value, color: colorFor(value, range) };
+  /**
+   * 목록에서 고른 단지로 지도를 옮긴다(2026-10-29).
+   *
+   * <p><b>핀이 보이는 줌까지 당긴다</b> — 목록에서 고르는 사람은 보통 멀리 보고 있고, 그 자리에
+   * 가도 줌이 낮으면 핀이 없어 "아무 일도 안 일어난" 것처럼 보인다(핀은 PIN_ZOOM 이상에서만
+   * 받는다). 이미 더 당겨 보고 있으면 그 배율을 유지한다 — 억지로 끌어당기지 않는다.
+   *
+   * <p>핀을 눌러 고른 경우에는 이 요청이 오지 않는다(App 이 목록에서만 보낸다).
+   */
+  useEffect(() => {
+    if (!complexFocus) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const lon = Number(complexFocus.lon);
+    const lat = Number(complexFocus.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+    const view = map.getView();
+    const current = view.getZoom() || 0;
+    view.animate({
+      center: fromLonLat([lon, lat]),
+      zoom: Math.max(current, COMPLEX_FOCUS_ZOOM),
+      duration: 450,
     });
-  }, [range]);
+  }, [complexFocus]);
 
   const levelLabel = level === "sido" ? "시 · 도" : level === "sgg" ? "시 · 군 · 구" : "읍 · 면 · 동";
-
-  // 실제로 경계가 보이는 중인가(줌 + 버튼). 범례·배지 문구가 이것을 따라간다.
-  const regionsVisible = showRegions && zoom < PIN_ZOOM;
 
   return (
     <div style={wrapStyle}>
       <div ref={containerRef} style={mapStyle} />
 
       {/* 지금 보고 있는 단계 — 줌으로 바뀌므로 눈에 보이게 적어 둔다 */}
+      {/* 지금 어느 단계를 보고 있나 — 경계를 그리지 않으므로 지역 이름 대신 단계만 적는다.
+          패널의 조건이 이 단계에 따라 움직이므로 그 사실은 계속 보여 준다. */}
       <div style={levelBadgeStyle}>
-        {regionsVisible ? `${levelLabel} 보기` : "아파트 보기"}
+        {zoom < PIN_ZOOM ? `${levelLabel} 범위` : "아파트 보기"}
         {loading ? " · 불러오는 중…" : ""}
       </div>
-
-      {/* 지역 색칠은 핀 줌에서 자동으로 꺼진다 — 다시 보고 싶을 때를 위한 버튼 */}
-      <button
-        type="button"
-        style={{ ...regionToggleStyle, color: regionsVisible ? "#2563eb" : "#64748b" }}
-        onClick={() => setShowRegions((prev) => !prev)}
-        title={regionsVisible ? "지역 경계를 감춥니다" : "지역 경계를 보여 줍니다"}
-      >
-        지역 색칠 {regionsVisible ? "켬" : "끔"}
-      </button>
 
       {error && <div style={errorBadgeStyle}>{error}</div>}
 
@@ -571,20 +582,6 @@ function EstateMap({
         </div>
       )}
 
-      {legend.length > 0 && regionsVisible && (
-        <div style={legendStyle}>
-          <span style={legendTitleStyle}>평균 거래가</span>
-          <div style={legendBarStyle}>
-            {legend.map((item, idx) => (
-              <span key={idx} style={{ ...legendChipStyle, background: item.color }} />
-            ))}
-          </div>
-          <div style={legendRangeStyle}>
-            <span>{formatManwonShort(range.min)}</span>
-            <span>{formatManwonShort(range.max)}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -850,15 +847,6 @@ const badgeBaseStyle = {
 };
 
 const levelBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "3.6rem" };
-const regionToggleStyle = {
-  ...badgeBaseStyle,
-  top: "0.75rem",
-  left: "11.2rem",
-  cursor: "pointer",
-  border: "1px solid #e2e8f0",
-  fontWeight: 600,
-};
-
 const errorBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "50%", transform: "translateX(-50%)", color: "#b91c1c" };
 
 const pinNoticeStyle = {
@@ -896,25 +884,3 @@ const tooltipStyle = {
 };
 
 const tooltipSubStyle = { fontSize: "0.76rem", color: "#64748b" };
-
-const legendStyle = {
-  position: "absolute",
-  left: "0.75rem",
-  bottom: "0.75rem",
-  padding: "0.5rem 0.7rem",
-  borderRadius: "10px",
-  background: "rgba(255,255,255,0.96)",
-  border: "1px solid #e2e8f0",
-  minWidth: "170px",
-  boxShadow: "0 2px 10px rgba(15, 23, 42, 0.08)",
-};
-
-const legendTitleStyle = { fontSize: "0.72rem", color: "#64748b" };
-const legendBarStyle = { display: "flex", gap: "2px", margin: "0.3rem 0 0.2rem" };
-const legendChipStyle = { flex: 1, height: "10px", borderRadius: "2px" };
-const legendRangeStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  fontSize: "0.72rem",
-  color: "#94a3b8",
-};
