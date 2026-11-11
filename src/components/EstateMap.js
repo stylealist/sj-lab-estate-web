@@ -50,6 +50,9 @@ function levelForZoom(zoom) {
 /** 이 줌보다 당기면 단지 핀을 받는다. 더 멀리서 받으면 라벨이 수천 개 겹친다. */
 const PIN_ZOOM = 13;
 
+/** 토스트가 머무는 시간(ms). 한 문장을 읽고 버튼을 누를 수 있을 만큼은 둔다. */
+const PIN_TOAST_MS = 5000;
+
 /** 목록에서 단지를 골랐을 때 당겨 주는 배율. 핀이 뜨는 줌(PIN_ZOOM)보다 한 단계 더 당긴다 —
  *  단지 하나를 보려고 고른 것이므로 주변 단지까지 빽빽하게 보일 필요가 없다. */
 const COMPLEX_FOCUS_ZOOM = 15;
@@ -536,6 +539,75 @@ function EstateMap({
     });
   }, [complexFocus]);
 
+  /**
+   * "이 배율에서는 아파트가 보이지 않는다"는 토스트(2026-11-11 사용자 요청).
+   *
+   * <p><b>넘어간 순간에만 한 번 띄운다.</b> 줌이 낮은 동안 계속 붙여 두면, 지역 시세를 보려고
+   * 일부러 줌아웃한 사람에게는 치우지 못하는 잔소리가 된다(종전 오른쪽 위 안내문이 그랬다).
+   * 그래서 "보이던 → 안 보이는" 경계를 넘을 때만 띄우고 스스로 사라지게 한다. 다시 당겼다가
+   * 또 줌아웃하면 다시 뜬다 — 그때는 사용자가 상태를 바꾼 것이므로 알려 주는 게 맞다.
+   *
+   * <p>좌표를 아직 못 받은 상태(`pinInfo.ready === false`)에서는 띄우지 않는다 — 그때는
+   * "핀 준비 중" 안내가 따로 있고, 당겨도 핀이 없으니 "아파트 보기" 버튼이 거짓말이 된다.
+   */
+  const pinsHidden = zoom < PIN_ZOOM;
+  const [pinToast, setPinToast] = useState(null);
+  const [toastIn, setToastIn] = useState(false);
+  /**
+   * 지금의 "핀이 숨은 구간"에서 이미 알렸는지.
+   *
+   * <p><b>"직전 줌과 비교"로 짜지 말 것.</b> 처음부터 멀리 보고 들어오면 좌표 준비 상태
+   * (`pinInfo`)가 지도보다 늦게 도착하는데, 그때 이미 "직전에도 숨어 있었다"가 되어
+   * **첫 화면에서는 한 번도 뜨지 않는다**(그렇게 짰다가 고쳤다). 구간 단위로 기억하면
+   * 늦게 도착해도 그 구간의 첫 알림이 나간다.
+   */
+  const toastDoneRef = useRef(false);
+
+  useEffect(() => {
+    if (!pinsHidden) {
+      // 핀이 보이면 할 말이 없다. 기억도 여기서 지운다 — 다시 줌아웃하면 그때 또 알린다.
+      toastDoneRef.current = false;
+      setPinToast(null);
+      return;
+    }
+    if (toastDoneRef.current) return; // 이 구간에서는 이미 알렸다(또는 사용자가 닫았다)
+    if (!pinInfo || !pinInfo.ready) return; // 좌표 준비 안내가 따로 나간다
+    toastDoneRef.current = true;
+    setPinToast(Date.now());
+  }, [pinsHidden, pinInfo]);
+
+  // 뜨고(한 틱 뒤에 보여야 전환이 걸린다) · 머물고 · 스스로 사라진다.
+  useEffect(() => {
+    if (!pinToast) {
+      setToastIn(false);
+      return undefined;
+    }
+    const raf = requestAnimationFrame(() => setToastIn(true));
+    const fadeOut = setTimeout(() => setToastIn(false), PIN_TOAST_MS);
+    const remove = setTimeout(() => setPinToast(null), PIN_TOAST_MS + 280);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(fadeOut);
+      clearTimeout(remove);
+    };
+  }, [pinToast]);
+
+  /** 토스트의 "아파트 보기" — 핀이 뜨는 배율까지 당긴다(중심은 그대로 둔다). */
+  const zoomToPins = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    // 누른 즉시 치운다 — 줌 값은 이동이 끝난 뒤에 갱신되므로 기다리면 0.45초 동안 남아 있다.
+    setPinToast(null);
+    map.getView().animate({ zoom: PIN_ZOOM + 0.4, duration: 450 });
+  }, []);
+
+  /** ✕ — 이 구간에서는 다시 띄우지 않는다(다시 당겼다 나오면 그때는 알린다). */
+  const dismissPinToast = useCallback(() => {
+    toastDoneRef.current = true;
+    setToastIn(false);
+    setPinToast(null);
+  }, []);
+
   const levelLabel = level === "sido" ? "시 · 도" : level === "sgg" ? "시 · 군 · 구" : "읍 · 면 · 동";
 
   return (
@@ -565,8 +637,28 @@ function EstateMap({
         </div>
       )}
 
-      {zoom < PIN_ZOOM && pinInfo && pinInfo.ready && (
-        <div style={pinNoticeStyle}>조금 더 당기면 아파트 핀이 보입니다.</div>
+      {/*
+        핀이 사라지는 줌으로 넘어간 순간 알려 주는 토스트(2026-11-11 사용자 요청).
+        종전에는 오른쪽 위에 같은 문장이 **줌이 낮은 동안 계속** 붙어 있어, 지역 시세를 보려고
+        일부러 줌아웃한 사람에게도 잔소리처럼 남았다. 지금은 **넘어간 순간 한 번** 뜨고
+        스스로 사라진다. 버튼을 누르면 핀이 보이는 배율까지 당겨 준다.
+      */}
+      {pinToast && (
+        <div style={toastIn ? toastShownStyle : toastHiddenStyle} role="status" aria-live="polite">
+          <span style={toastIconStyle} aria-hidden="true">
+            {"\u{1F4CD}"}
+          </span>
+          <span style={toastTextStyle}>
+            <strong style={toastTitleStyle}>이 배율에서는 아파트가 보이지 않습니다</strong>
+            지금은 <b>{levelLabel}</b> 범위입니다 — 지역별 시세는 왼쪽에서 볼 수 있습니다.
+          </span>
+          <button type="button" style={toastActionStyle} onClick={zoomToPins}>
+            아파트 보기
+          </button>
+          <button type="button" style={toastCloseStyle} onClick={dismissPinToast} aria-label="닫기">
+            ✕
+          </button>
+        </div>
       )}
 
       {hovered && (
@@ -865,6 +957,93 @@ const pinNoticeStyle = {
 };
 
 const pinNoticeSubStyle = { display: "block", marginTop: "0.3rem", color: "#a16207", fontSize: "0.72rem" };
+
+/**
+ * 토스트 — 지도 아래 가운데에서 올라온다(2026-11-11).
+ *
+ * <p>자리를 <b>아래 가운데</b>로 둔 이유: 위쪽에는 단계 배지·핀 준비 안내가 있고, 오른쪽 아래는
+ * 핀에 마우스를 올렸을 때 뜨는 설명이 쓴다. 왼쪽은 패널이 덮는다.
+ *
+ * <p><b>`pointerEvents` 는 상자에만 둔다</b> — 지도 위에 떠 있으므로 상자 밖에서는 지도를
+ * 끌 수 있어야 한다. 그래서 그릇을 따로 두지 않고 상자 하나만 띄운다.
+ */
+const toastBaseStyle = {
+  position: "absolute",
+  bottom: "1.1rem",
+  left: "50%",
+  display: "flex",
+  alignItems: "center",
+  gap: "0.6rem",
+  maxWidth: "min(30rem, calc(100% - 2rem))",
+  padding: "0.6rem 0.65rem 0.6rem 0.85rem",
+  borderRadius: "12px",
+  background: "rgba(15, 23, 42, 0.94)",
+  color: "#e2e8f0",
+  fontSize: "0.82rem",
+  lineHeight: 1.45,
+  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.32)",
+  transition: "opacity 0.26s ease, transform 0.26s cubic-bezier(0.4, 0, 0.2, 1)",
+  zIndex: 5,
+};
+
+/**
+ * 움직임을 줄여 달라고 설정한 사용자에게는 전환을 걸지 않는다.
+ *
+ * <p>인라인 스타일에는 미디어 쿼리를 쓸 수 없어 `matchMedia` 로 직접 본다. 서버에서 그릴 때를
+ * 대비해 `window` 유무를 확인한다(이 프로젝트는 브라우저에서만 그리지만 습관을 맞춘다).
+ */
+const reduceMotion =
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// 보일 때 · 숨을 때 — `transform` 에 가운데 맞춤(-50%)이 함께 들어가므로 두 상태를 따로 적는다
+const toastShownStyle = {
+  ...toastBaseStyle,
+  transition: reduceMotion ? "none" : toastBaseStyle.transition,
+  opacity: 1,
+  transform: "translate(-50%, 0)",
+};
+
+const toastHiddenStyle = {
+  ...toastShownStyle,
+  opacity: reduceMotion ? 1 : 0,
+  transform: reduceMotion ? "translate(-50%, 0)" : "translate(-50%, 0.6rem)",
+};
+
+const toastIconStyle = { fontSize: "1.05rem", lineHeight: 1, flexShrink: 0 };
+
+const toastTextStyle = { minWidth: 0 };
+
+const toastTitleStyle = { display: "block", color: "#ffffff", fontWeight: 600, marginBottom: "0.1rem" };
+
+const toastActionStyle = {
+  flexShrink: 0,
+  padding: "0.35rem 0.7rem",
+  borderRadius: "8px",
+  border: "1px solid rgba(148, 163, 184, 0.45)",
+  background: "#2563eb",
+  color: "#ffffff",
+  fontSize: "0.78rem",
+  fontWeight: 600,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const toastCloseStyle = {
+  flexShrink: 0,
+  width: "1.6rem",
+  height: "1.6rem",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: "8px",
+  border: "none",
+  background: "transparent",
+  color: "#94a3b8",
+  fontSize: "0.8rem",
+  cursor: "pointer",
+};
 
 const tooltipStyle = {
   position: "absolute",

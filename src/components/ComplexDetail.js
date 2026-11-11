@@ -3,6 +3,7 @@ import {
   fetchComplexDetail,
   fetchComplexMonthly,
   fetchComplexRentMonthly,
+  fetchComplexRentTrades,
   fetchComplexTrades,
   formatArea,
   formatCount,
@@ -12,6 +13,15 @@ import {
   formatYmLong,
 } from "../api";
 import TrendChart from "./TrendChart";
+
+/**
+ * 거래 내역을 한 번에 받아 오는 건수(2026-11-11).
+ *
+ * <p>종전에는 12건만 받아 <b>"최근 거래"</b> 였다. 사용자가 "거래 내역이 쭉 나오면 좋겠다"고
+ * 해서 서버 상한(500)까지 받아 두고, 높이를 제한한 상자 안에서 스크롤로 본다. 500 을 넘는
+ * 단지는 화면이 "더 있습니다"를 적는다 — 조용히 자르면 "기록이 여기까지"로 읽힌다.
+ */
+const TRADE_LIMIT = 500;
 
 /**
  * 단지 상세 — 고른 아파트의 매매·전월세를 월 단위로 보여 준다.
@@ -26,7 +36,8 @@ import TrendChart from "./TrendChart";
  * 따로라 서버도 두 번 부르지만, 탭을 누를 때마다 다시 부르면 비교가 끊긴다 — 그래서 한 번에
  * 둘 다 받아 두고 탭은 화면에서만 바꾼다.
  *
- * <p><b>평형은 전용면적 기준이다</b>(원천에 공급면적이 없다). 그래서 버튼에 전용 ㎡를 함께 적는다.
+ * <p><b>평형은 분양 평형이다</b>(2026-10-28 바뀜). 원천에 전용면적만 있어 통상 전용률 0.75 로
+ * 되짚어 환산한다 — 추정이므로 버튼과 안내문에 전용 ㎡를 함께 적는다.
  *
  * @param areaM2 그 단지가 차지하는 넓이(㎡). 지도가 테두리를 받을 때 함께 알려 준다.
  * @param onClose 닫기 — 패널이 지역 보기(단지 목록)로 돌아간다.
@@ -40,6 +51,7 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
   const [tradeMonthly, setTradeMonthly] = useState([]);
   const [rentMonthly, setRentMonthly] = useState([]);
   const [trades, setTrades] = useState([]);
+  const [rentTrades, setRentTrades] = useState([]);
   const [loading, setLoading] = useState(false);
   // 첫 묶음(단지 기본 + 월별 + 최근 거래)이 다 들어왔는지. 그 전에는 내용 대신 자리맞춤을 보여 준다.
   const [firstLoaded, setFirstLoaded] = useState(false);
@@ -75,8 +87,11 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
     Promise.all([
       fetchComplexMonthly(propertyType, aptSeq, params).then((d) => alive && setTradeMonthly(d.items || [])),
       fetchComplexRentMonthly(propertyType, aptSeq, params).then((d) => alive && setRentMonthly(d.items || [])),
-      fetchComplexTrades(propertyType, aptSeq, { umdNm, pyeong, limit: 12 }).then(
+      fetchComplexTrades(propertyType, aptSeq, { umdNm, pyeong, limit: TRADE_LIMIT }).then(
         (d) => alive && setTrades(d.items || [])
+      ),
+      fetchComplexRentTrades(propertyType, aptSeq, { umdNm, pyeong, limit: TRADE_LIMIT }).then(
+        (d) => alive && setRentTrades(d.items || [])
       ),
     ])
       .catch((e) => alive && setError(e.message))
@@ -96,6 +111,8 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
   const monthly = mode === "trade" ? tradeMonthly : rentMonthly;
   // 표는 최근 달이 위로 — 지도에서 핀을 누르는 사람은 "지금 얼마인가"를 먼저 본다
   const rows = useMemo(() => monthly.slice().reverse(), [monthly]);
+  // 거래 내역도 탭을 따라 바뀐다(매매 ↔ 전월세). 서버가 최근 계약일 먼저로 정렬해 준다.
+  const dealRows = mode === "trade" ? trades : rentTrades;
   const latest = monthly.length > 0 ? monthly[monthly.length - 1] : null;
 
   /**
@@ -344,37 +361,76 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
             </table>
           )}
 
-          {mode === "trade" && trades.length > 0 && (
+          {/*
+            거래 내역 — 계약 한 건씩. 매매·전월세 둘 다 있고 탭을 따라 바뀐다(2026-11-11).
+            종전에는 매매 12건만 "최근 거래"로 보여 줬다. 기록이 수백 건인 단지도 있어
+            **높이를 제한한 상자 안에서 스크롤**한다 — 패널 전체가 끝없이 길어지면 아래쪽
+            안내문까지 내려가야 보인다. 표 머리말은 위에 붙여(sticky) 스크롤 중에도
+            어느 칸인지 보이게 한다.
+          */}
+          <div style={subTitleRowStyle}>
+            <h4 style={subTitleInlineStyle}>거래 내역</h4>
+            {dealRows.length > 0 && (
+              <span style={countBadgeStyle}>
+                {formatCount(dealRows.length)}건{dealRows.length >= TRADE_LIMIT ? "+" : ""}
+              </span>
+            )}
+          </div>
+          {dealRows.length === 0 ? (
+            <p style={noteStyle}>{loading ? "불러오는 중…" : "표시할 거래 내역이 없습니다."}</p>
+          ) : (
             <>
-              <h4 style={subTitleStyle}>최근 거래</h4>
-              <table style={tableStyle}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>계약일</th>
-                    <th style={thNumStyle}>층</th>
-                    <th style={thNumStyle}>전용(㎡)</th>
-                    <th style={thNumStyle}>거래가</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.map((row, idx) => (
-                    <tr key={`${row.deal_year}-${row.deal_month}-${row.deal_day}-${idx}`}>
-                      <td style={tdStyle}>
-                        {String(row.deal_year).slice(2)}.{String(row.deal_month).padStart(2, "0")}.
-                        {String(row.deal_day).padStart(2, "0")}
-                      </td>
-                      <td style={tdNumStyle}>{row.floor}</td>
-                      <td style={tdNumStyle}>{Number(row.exclu_use_ar).toFixed(1)}</td>
-                      <td style={{ ...tdNumStyle, fontWeight: 600 }}>{formatManwon(row.deal_amount)}</td>
+              <div style={scrollBoxStyle}>
+                <table style={stickyTableStyle}>
+                  <thead>
+                    <tr>
+                      <th style={stickyThStyle}>계약일</th>
+                      <th style={stickyThNumStyle}>층</th>
+                      <th style={stickyThNumStyle}>전용(㎡)</th>
+                      <th style={stickyThNumStyle}>{mode === "trade" ? "거래가" : "보증금 / 월세"}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {dealRows.map((row, idx) => (
+                      <tr key={`${row.deal_year}-${row.deal_month}-${row.deal_day}-${idx}`}>
+                        <td style={tdStyle}>
+                          {String(row.deal_year).slice(2)}.{String(row.deal_month).padStart(2, "0")}.
+                          {String(row.deal_day).padStart(2, "0")}
+                        </td>
+                        <td style={tdNumStyle}>{row.floor}</td>
+                        <td style={tdNumStyle}>{Number(row.exclu_use_ar).toFixed(1)}</td>
+                        {mode === "trade" ? (
+                          <td style={{ ...tdNumStyle, fontWeight: 600 }}>{formatManwon(row.deal_amount)}</td>
+                        ) : (
+                          <td style={tdNumStyle}>
+                            <strong style={{ color: Number(row.monthly_rent) > 0 ? "#1e293b" : "#047857" }}>
+                              {row.deposit ? formatManwon(row.deposit) : "보증금 없음"}
+                              {Number(row.monthly_rent) > 0
+                                ? ` / ${Number(row.monthly_rent).toLocaleString()}만`
+                                : ""}
+                            </strong>
+                            <span style={cellSubStyle}>
+                              {Number(row.monthly_rent) > 0 ? "월세" : "전세"}
+                              {row.contract_type ? ` · ${row.contract_type}` : ""}
+                            </span>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {dealRows.length >= TRADE_LIMIT && (
+                <p style={moreNoteStyle}>
+                  가장 최근 {formatCount(TRADE_LIMIT)}건까지 보여 줍니다 — 더 오래된 거래도 있습니다.
+                </p>
+              )}
             </>
           )}
 
           <p style={footNoteStyle}>
-            평형은 <b>전용면적</b> 기준입니다(원천에 공급면적이 없습니다). 전세는 월세가 0인 계약입니다.
+            평형은 <b>분양 평형</b>입니다 — 원천에 전용면적만 있어 통상 전용률(75%)로 환산한 값이라
+            전용 ㎡를 함께 적습니다. 전세는 월세가 0인 계약입니다.
           </p>
         </div>
       )}
@@ -587,6 +643,26 @@ const subTitleStyle = {
 
 const noteStyle = { margin: 0, fontSize: "0.84rem", color: "#64748b", lineHeight: 1.55 };
 
+/** 소제목 줄 — 왼쪽 제목, 오른쪽 건수. 제목의 바깥 여백은 이 줄이 가진다. */
+const subTitleRowStyle = {
+  display: "flex",
+  alignItems: "baseline",
+  justifyContent: "space-between",
+  gap: "0.5rem",
+  margin: "1.15rem 0 0.45rem",
+};
+
+const subTitleInlineStyle = { ...subTitleStyle, margin: 0 };
+
+const countBadgeStyle = {
+  fontSize: "0.78rem",
+  color: "#64748b",
+  fontVariantNumeric: "tabular-nums",
+  flexShrink: 0,
+};
+
+const moreNoteStyle = { margin: "0.4rem 0 0", fontSize: "0.76rem", color: "#94a3b8", lineHeight: 1.5 };
+
 const warnStyle = {
   margin: "0 0 0.4rem",
   padding: "0.4rem 0.5rem",
@@ -631,6 +707,48 @@ const tdStyle = {
 const tdNumStyle = { ...tdStyle, textAlign: "right", fontWeight: 500 };
 
 const cellSubStyle = { display: "block", fontSize: "0.74rem", color: "#94a3b8", lineHeight: 1.35 };
+
+/**
+ * 거래 내역 상자(2026-11-11).
+ *
+ * <p><b>높이를 제한하고 안에서만 스크롤한다.</b> 기록이 수백 건인 단지에서 표를 그대로 늘리면
+ * 패널이 끝없이 길어져 아래 안내문까지 한참 내려가야 한다. `overscrollBehavior: contain` 은
+ * 상자 끝에서 패널 전체가 따라 움직이지 않게 막는다(스크롤이 두 겹이라 필요하다).
+ *
+ * <p>이 묶음은 <b>`tableStyle`·`thStyle` 뒤에 두어야 한다</b> — 위에 두면 아직 만들어지지 않은
+ * 값을 펼치려 해서 화면이 흰 채로 뜬다(module 평가 순서).
+ */
+const scrollBoxStyle = {
+  maxHeight: "19rem",
+  overflowY: "auto",
+  overflowX: "hidden",
+  border: "1px solid #e2e8f0",
+  borderRadius: "10px",
+  background: "#ffffff",
+  overscrollBehavior: "contain",
+  WebkitOverflowScrolling: "touch",
+};
+
+/**
+ * 상자 안의 표 — 머리말이 위에 붙는다(스크롤 중에도 어느 칸인지 보인다).
+ *
+ * <p><b>`borderCollapse` 가 separate 여야 머리말이 붙는다.</b> collapse 에서는 칸 테두리가
+ * 표 전체에 속해 sticky 가 걸린 칸과 함께 움직이지 않는다 — 그래서 밑줄을 테두리가 아니라
+ * 안쪽 그림자로 그린다.
+ */
+const stickyTableStyle = { ...tableStyle, borderCollapse: "separate", borderSpacing: 0 };
+
+const stickyThStyle = {
+  ...thStyle,
+  position: "sticky",
+  top: 0,
+  zIndex: 1,
+  background: "#f8fafc",
+  border: "none",
+  boxShadow: "inset 0 -1px 0 #e2e8f0",
+};
+
+const stickyThNumStyle = { ...stickyThStyle, textAlign: "right" };
 
 const footNoteStyle = {
   margin: "1rem 0 0",

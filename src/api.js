@@ -126,6 +126,9 @@ export const fetchComplexRentMonthly = (type, aptSeq, params) =>
   get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/rent/monthly`, params);
 export const fetchComplexTrades = (type, aptSeq, params) =>
   get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/trades`, params);
+// 전월세 거래 내역. 매매(`/trades`)와 파라미터·상한이 같다(둘 다 limit 최대 500).
+export const fetchComplexRentTrades = (type, aptSeq, params) =>
+  get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/rent/trades`, params);
 
 // 고른 단지의 테두리(연속지적도 필지, GeoJSON Feature).
 // 아직 못 받았으면 오류가 아니라 { available: false } 로 온다 — 테두리가 없어도 핀·팝업은 정상이다.
