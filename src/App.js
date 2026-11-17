@@ -15,8 +15,9 @@ import {
 import Header from "./components/Header";
 import ComingSoon from "./components/ComingSoon";
 import EstateMap from "./components/EstateMap";
-import MapSidePanel from "./components/MapSidePanel";
+import MapSidePanel, { mapOverlayLeft } from "./components/MapSidePanel";
 import ComplexDetail from "./components/ComplexDetail";
+import ComplexSearch from "./components/ComplexSearch";
 import LoadingBar from "./components/LoadingBar";
 import About from "./components/About";
 import Contact from "./components/Contact";
@@ -315,6 +316,43 @@ function App() {
     }
   }, []);
 
+  /**
+   * 헤더 검색창에서 단지를 고르면 — **지역 조건을 그 단지에 맞추고** 상세를 열고 지도를 옮긴다.
+   *
+   * <p>목록 선택(`handleSelectComplexFromList`)과 다른 점이 두 가지다.
+   * <ul>
+   *   <li>검색은 **보고 있는 지역 밖**의 단지를 고를 수 있다. 패널 조회가 `sggCd` 를 쓰므로
+   *       시도·시군구를 먼저 맞추지 않으면 상세가 비거나 엉뚱한 지역을 본다.</li>
+   *   <li>헤더에서 고르므로 **패널을 열고 단지 탭으로 바꿔 줘야** 한다(목록은 이미 패널 안이다).</li>
+   * </ul>
+   */
+  const handleSelectComplexFromSearch = useCallback(
+    (complex) => {
+      if (!complex) return;
+      const nextSgg = complex.sgg_cd ? String(complex.sgg_cd) : "";
+      if (nextSgg) {
+        const found = regions.find((region) => region.sgg_cd === nextSgg);
+        if (found && found.sido_cd) setSidoCd(found.sido_cd);
+        setSggCd(nextSgg);
+        setUmdNm("");
+      }
+      setSelectedComplex({
+        apt_seq: complex.apt_seq,
+        umd_nm: complex.umd_nm,
+        apt_nm: complex.apt_nm,
+        lon: complex.lon,
+        lat: complex.lat,
+      });
+      setTab("complex");
+      setPanelOpen(true);
+      const lon = Number(complex.lon);
+      const lat = Number(complex.lat);
+      if (Number.isFinite(lon) && Number.isFinite(lat) && lon !== 0 && lat !== 0) {
+        setComplexFocus({ lon, lat, at: Date.now() });
+      }
+    },
+    [regions]
+  );
   /** 지도 핀을 누르면 왼쪽 패널에 그 단지를 연다(핀 라벨과 같은 값이 패널에서 자세히 보인다). */
   const handleSelectComplexFromMap = useCallback((pin) => {
     setSelectedComplex({ apt_seq: pin.apt_seq, umd_nm: pin.umd_nm, apt_nm: pin.apt_nm });
@@ -517,6 +555,14 @@ function App() {
               loading={loading}
               pinInfo={pinInfo}
             />
+
+            {/* 전국 단지 검색 — 지도 위 왼쪽 위(2026-11-17 사용자 요청).
+                헤더에 있을 때는 헤더를 접으면 함께 사라졌고, 오른쪽 묶음이 꽉 차 둘째 줄로
+                밀려 접기 버튼과 겹쳐 보였다. 패널 **다음에** 두어 결과 목록이 패널보다
+                위에 그려지게 한다. */}
+            <div style={mapSearchStyle(mapOverlayLeft(panelOpen, Boolean(selectedComplex)))}>
+              <ComplexSearch propertyType={propertyType} onSelect={handleSelectComplexFromSearch} />
+            </div>
           </div>
         ))}
       </main>
@@ -535,6 +581,22 @@ export default App;
 const mapMainStyle = { flex: 1, minHeight: 0, position: "relative" };
 
 const mapShellStyle = { position: "absolute", inset: 0 };
+
+/**
+ * 지도 위 검색창 자리.
+ *
+ * <p>왼쪽 거리는 패널이 정한다(`mapOverlayLeft`) — 패널 폭을 여기 또 적으면 폭을 바꿀 때
+ * 한쪽만 고쳐져 겹친다. 패널이 열리고 닫힐 때 <b>같은 곡선·같은 시간으로 함께 움직인다</b>
+ * (패널의 `transform` 전환과 맞췄다. 어긋나면 검색창이 패널을 타고 넘는 것처럼 보인다).
+ */
+const mapSearchStyle = (left) => ({
+  position: "absolute",
+  top: "0.75rem",
+  left: left + 12 + "px",
+  zIndex: 6,
+  transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+});
+
 
 
 const pageStyle = { display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8fafc" };

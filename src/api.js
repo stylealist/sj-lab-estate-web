@@ -117,6 +117,17 @@ export const fetchMapComplexes = (type, params) => get(`/${type}/map/complexes`,
 // ── 단지(아파트) 단위 ──────────────────────────────────────────────────────
 // 단지 키는 apt_seq(예: 11680-218) 다. 서버가 앞 5자리를 시군구 코드로 써서 조회를 좁히므로
 // 읍면동(umdNm)까지 함께 넘기면 더 빠르다.
+/**
+ * 전국 단지 검색 — 이름 일부로 찾는다(헤더 검색창).
+ *
+ * `fetchComplexes` 는 `sggCd` 가 필수라 **시군구를 먼저 골라야** 단지를 찾을 수 있었다.
+ * 이쪽은 지역을 모른 채 "래미안" 만으로 전국에서 찾는다. 응답에 `lon`·`lat` 과
+ * `sgg_cd`·`sgg_nm`·`umd_nm` 이 함께 와서, 고른 단지로 지도를 옮기고 지역 조건까지 맞출 수 있다.
+ *
+ * 서버가 2자 미만이면 빈 목록을 돌려준다(한 글자로 전국을 뒤지지 않게).
+ */
+export const fetchComplexSearch = (type, q, limit) =>
+  get(`/${type}/complexes/search`, { q, limit });
 export const fetchComplexes = (type, params) => get(`/${type}/complexes`, params);
 export const fetchComplexDetail = (type, aptSeq, umdNm) =>
   get(`/${type}/complexes/${encodeURIComponent(aptSeq)}`, { umdNm });

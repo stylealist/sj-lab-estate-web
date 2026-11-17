@@ -66,10 +66,14 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
       .then((data) => {
         if (!alive) return;
         setDetail(data);
-        // 거래가 가장 많은 평형을 먼저 보여 준다(그 단지의 대표 평형)
+        // 거래가 가장 많은 평형을 먼저 보여 준다(그 단지의 대표 평형).
+        // **매매가 없는 단지**(전국 3,053개)는 평형 건수가 전월세 건수로 온다 — 둘 중 있는 쪽으로 센다.
         const areas = data.areas || [];
-        const main = areas.slice().sort((a, b) => b.deal_count - a.deal_count)[0];
+        const weight = (a) => Number(a.deal_count) || Number(a.rent_count) || 0;
+        const main = areas.slice().sort((a, b) => weight(b) - weight(a))[0];
         setPyeong(main ? main.pyeong : null);
+        // 매매 기록이 없으면 전월세 탭을 먼저 펴 준다 — 매매 탭이 열리면 빈 화면만 보인다
+        if (data.trade_available === false) setMode("rent");
       })
       .catch((e) => alive && setError(e.message));
     return () => {
@@ -106,6 +110,8 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
   }, [detail, propertyType, aptSeq, umdNm, pyeong, fromYm, toYm, wholePeriod]);
 
   const areas = (detail && detail.areas) || [];
+  // 매매 기록이 없는 단지인가(서버가 `trade_available: false` 로 알려 준다)
+  const tradeMissing = Boolean(detail) && detail.trade_available === false;
   const currentArea = useMemo(() => areas.find((a) => a.pyeong === pyeong) || null, [areas, pyeong]);
 
   const monthly = mode === "trade" ? tradeMonthly : rentMonthly;
@@ -204,9 +210,9 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                   type="button"
                   style={area.pyeong === pyeong ? chipActiveStyle : chipStyle}
                   onClick={() => setPyeong(area.pyeong)}
-                  title={`전용 ${Math.round(area.area_min)}~${Math.round(area.area_max)}㎡ · 거래 ${formatCount(
-                    area.deal_count
-                  )}건`}
+                  title={`전용 ${Math.round(area.area_min)}~${Math.round(area.area_max)}㎡ · ${
+                    tradeMissing ? "전월세" : "거래"
+                  } ${formatCount(tradeMissing ? area.rent_count : area.deal_count)}건`}
                 >
                   {area.pyeong}평
                 </button>
@@ -219,6 +225,14 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                 전체 평형
               </button>
             </div>
+          )}
+
+          {/* 매매 거래가 아예 없는 단지(단지 표 44,616개 중 3,053개)는 그 사실을 먼저 알린다 —
+              매매 탭이 비어 있으면 "조회가 안 된다"로 읽힌다. 2026-11-17 전국 검색에서 발견. */}
+          {tradeMissing && (
+            <p style={noTradeNoteStyle}>
+              이 단지는 <b>매매 거래 기록이 없습니다</b> — 전월세 {formatCount(detail.rent_count)}건만 있습니다.
+            </p>
           )}
 
           <div style={modeRowStyle}>
@@ -674,6 +688,18 @@ const warnStyle = {
   color: "#92400e",
 };
 const errorStyle = { margin: 0, padding: "0.9rem 0.85rem", fontSize: "0.875rem", color: "#b91c1c" };
+
+// 오류가 아니라 **안내**다 — 붉은색을 쓰지 않고 호박색 띠로 둔다.
+const noTradeNoteStyle = {
+  margin: "0.55rem 0 0",
+  padding: "0.5rem 0.65rem",
+  borderRadius: "8px",
+  background: "#fffbeb",
+  border: "1px solid #fde68a",
+  fontSize: "0.82rem",
+  lineHeight: 1.5,
+  color: "#92400e",
+};
 
 // 숫자 표는 **자리폭이 같아야**(tabular-nums) 위아래로 비교된다. 줄 간격이 없어 숫자가
 // 뭉쳐 보였고 12.5px 는 작았다(2026-10-28 가독성 지적).

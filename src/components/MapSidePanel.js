@@ -371,6 +371,20 @@ const COMPLEX_WIDTH = 420;
 /** 접었을 때 화면에 남겨 두는 폭(손잡이가 걸릴 자리). 지도 서비스와 같은 4px 다. */
 const PEEK_WIDTH = 4;
 
+/** 패널 오른쪽 바깥에 붙는 손잡이 폭(px) — `handleStyle` 과 같은 값을 쓴다. */
+const HANDLE_WIDTH = 24;
+
+/**
+ * 지도 위에 띄우는 것(전국 단지 검색창 등)이 <b>패널·손잡이를 피해</b> 놓일 왼쪽 거리(px).
+ *
+ * <p>패널 폭을 화면(`App.js`) 쪽에 또 적으면 폭을 바꿀 때 한쪽만 고쳐져 겹친다. 폭을 아는 곳은
+ * 이 파일뿐이므로 거리도 여기서 정한다. 패널이 접히면 남는 건 엿보기 폭(4px) + 손잡이뿐이다.
+ */
+export function mapOverlayLeft(open, complexOpen) {
+  const width = complexOpen ? COMPLEX_WIDTH : PANEL_WIDTH;
+  return (open ? width : PEEK_WIDTH) + HANDLE_WIDTH;
+}
+
 /**
  * 패널을 담아 <b>통째로 밀어 내는</b> 그릇(2026-10-28).
  *
@@ -447,10 +461,10 @@ const complexSlotStyle = { flex: "1 1 auto", minHeight: 0, display: "flex" };
 // 패널 오른쪽 바깥에 붙는 세로 탭 — 지도 서비스의 `.panel-toggle` 과 같은 치수(24×48)다
 const handleStyle = {
   position: "absolute",
-  right: "-24px",
+  right: -HANDLE_WIDTH + "px",
   top: "50%",
   transform: "translateY(-50%)",
-  width: "24px",
+  width: HANDLE_WIDTH + "px",
   height: "48px",
   display: "flex",
   alignItems: "center",

@@ -938,7 +938,10 @@ const badgeBaseStyle = {
   boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
 };
 
-const levelBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "3.6rem" };
+// 단계 배지는 **한 줄 아래**다(2026-11-17) — 위 줄 왼쪽은 전국 단지 검색창이 쓴다(`App.js`).
+// 왼쪽 3.6rem 은 그대로 둔다(그 왼쪽은 지도 확대·축소 버튼 자리).
+const levelBadgeStyle = { ...badgeBaseStyle, top: "3.4rem", left: "3.6rem" };
+
 const errorBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "50%", transform: "translateX(-50%)", color: "#b91c1c" };
 
 const pinNoticeStyle = {
