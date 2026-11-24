@@ -279,7 +279,7 @@ const captionLightStyle = { fontSize: "0.7rem", color: "#94a3b8", whiteSpace: "n
 const captionDarkStyle = {
   fontSize: "11px",
   fontWeight: 500,
-  color: "rgba(226, 232, 240, 0.62)",
+  color: "rgba(226, 232, 240, 0.78)",
   letterSpacing: "0.04em",
   whiteSpace: "nowrap",
 };
@@ -316,7 +316,7 @@ const listLightStyle = {
 };
 
 const listDarkStyle = {
-  background: "#132033",
+  background: "#1b3159",
   border: "1px solid rgba(148, 178, 232, 0.24)",
   borderRadius: "12px",
   boxShadow: "0 16px 34px rgba(8, 15, 28, 0.5)",
@@ -338,7 +338,7 @@ const optionLightStyle = { color: "#1e293b" };
 const optionLightHoverStyle = { background: "#eff5ff", color: "#1d4ed8" };
 const optionLightSelectedStyle = { color: "#1d4ed8", fontWeight: 600 };
 
-const optionDarkStyle = { color: "rgba(226, 232, 240, 0.82)", fontSize: "13px" };
+const optionDarkStyle = { color: "rgba(226, 232, 240, 0.9)", fontSize: "13px" };
 const optionDarkHoverStyle = { background: "rgba(148, 178, 232, 0.18)", color: "#ffffff" };
 const optionDarkSelectedStyle = { color: "#ffffff", fontWeight: 600 };
 
@@ -346,6 +346,6 @@ const optionDisabledStyle = { cursor: "not-allowed", opacity: 0.45, background: 
 
 const optionLabelStyle = { overflow: "hidden", textOverflow: "ellipsis" };
 
-const emptyStyle = { cursor: "default", color: "#94a3b8", justifyContent: "center" };
+const emptyStyle = { cursor: "default", color: "rgba(226, 232, 240, 0.7)", justifyContent: "center" };
 
 export default Dropdown;

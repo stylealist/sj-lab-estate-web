@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 
 /**
  * 아직 서비스하지 않는 매물 종류를 골랐을 때 보여 주는 화면.
@@ -46,8 +47,8 @@ function ComingSoon({ type, onGoApartment }) {
 export default ComingSoon;
 
 const cardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "12px",
   padding: "2.2rem 1.6rem",
   maxWidth: "720px",
@@ -57,9 +58,9 @@ const cardStyle = {
 
 const badgeStyle = {
   display: "inline-block",
-  background: "#fffbeb",
-  border: "1px solid #fde68a",
-  color: "#b45309",
+  background: colors.warnSoft,
+  border: `${colors.line}`,
+  color: colors.warn,
   borderRadius: "999px",
   padding: "0.25rem 0.75rem",
   fontSize: "0.75rem",
@@ -71,15 +72,15 @@ const titleStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "1.5rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   margin: "0.9rem 0 0.4rem",
 };
 
-const leadStyle = { fontSize: "0.92rem", color: "#475569", lineHeight: 1.7, margin: "0 0 1.4rem" };
+const leadStyle = { fontSize: "0.92rem", color: colors.textSoft, lineHeight: 1.7, margin: "0 0 1.4rem" };
 
 const boxStyle = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "10px",
   padding: "1rem 1.1rem",
   textAlign: "left",
@@ -88,16 +89,16 @@ const boxStyle = {
 const boxTitleStyle = {
   fontSize: "0.8rem",
   fontWeight: 600,
-  color: "#1e40af",
+  color: colors.accent,
   marginBottom: "0.6rem",
   letterSpacing: "0.02em",
 };
 
 const listStyle = { margin: 0, paddingLeft: "1.1rem" };
 
-const itemStyle = { fontSize: "0.86rem", color: "#334155", lineHeight: 1.7, marginBottom: "0.4rem" };
+const itemStyle = { fontSize: "0.86rem", color: colors.textSoft, lineHeight: 1.7, marginBottom: "0.4rem" };
 
-const noteStyle = { fontSize: "0.86rem", color: "#475569", lineHeight: 1.7, margin: "1.3rem 0 1.1rem" };
+const noteStyle = { fontSize: "0.86rem", color: colors.textSoft, lineHeight: 1.7, margin: "1.3rem 0 1.1rem" };
 
 const buttonStyle = {
   background: "linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)",

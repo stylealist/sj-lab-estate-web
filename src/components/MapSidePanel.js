@@ -4,6 +4,7 @@ import Dropdown from "./Dropdown";
 import TrendChart from "./TrendChart";
 import TradeTable from "./TradeTable";
 import RankingList from "./RankingList";
+import { chip, chipOn, colors, input } from "../theme";
 import { formatCount, formatManwon, formatYmLong } from "../api";
 
 /**
@@ -27,6 +28,8 @@ function MapSidePanel({
   tabs,
   // 단지 상세(고른 단지가 있을 때만). 있으면 지역 보기 대신 이것을 채운다.
   complexView,
+  // "내 단지" 탭의 내용(관심 · 최근 · 메모 · 내 정보). App 이 만들어 넘긴다.
+  mineView,
   // 지역 선택
   sidoList,
   sggList,
@@ -130,6 +133,7 @@ function MapSidePanel({
             onChange={onSelectSido}
             ariaLabel="시도 선택"
             style={selectStyle}
+            tone="dark"
           />
           <Dropdown
             options={sggOptions}
@@ -138,6 +142,7 @@ function MapSidePanel({
             disabled={!sidoCd}
             ariaLabel="시군구 선택"
             style={selectStyle}
+            tone="dark"
           />
           <Dropdown
             options={emdOptions}
@@ -146,6 +151,7 @@ function MapSidePanel({
             disabled={!sggCd || emdList.length === 0}
             ariaLabel="읍면동 선택"
             style={selectStyle}
+            tone="dark"
           />
         </div>
         <div style={filterRowStyle}>
@@ -155,6 +161,7 @@ function MapSidePanel({
             onChange={onChangeFromYm}
             ariaLabel="시작 월"
             style={selectStyle}
+            tone="dark"
           />
           <span style={tildeStyle}>~</span>
           <Dropdown
@@ -163,6 +170,7 @@ function MapSidePanel({
             onChange={onChangeToYm}
             ariaLabel="종료 월"
             style={selectStyle}
+            tone="dark"
           />
         </div>
       </div>
@@ -250,8 +258,8 @@ function MapSidePanel({
               items={rentMonthly}
               lineKey="avg_jeonse_deposit"
               lineLabel="평균 전세 보증금"
-              lineColor="#047857"
-              barColor="#bbf7d0"
+              lineColor={colors.teal}
+              barColor={colors.tealBar}
             />
             <h3 style={blockTitleStyle}>전세 · 월세 구성</h3>
             <RentComposition items={rentMonthly} />
@@ -268,6 +276,12 @@ function MapSidePanel({
             <RankingList items={ranking} loading={loading} onSelectRegion={onSelectRegionFromRanking} />
           </>
         )}
+
+        {/*
+          "내 단지"(관심 · 최근 · 메모 · 내 정보)는 App 이 만들어 넘긴다 — `complexView` 와 같은
+          방식이다. 회원 기능은 로그인 상태와 표 준비 여부에 걸려 있어 패널이 알 필요가 없다.
+        */}
+        {tab === "mine" && mineView}
       </div>
       </aside>
       <PanelHandle open={open} onToggle={onToggle} />
@@ -414,18 +428,23 @@ const shellStyle = (open, width) => ({
  * <p>종전에는 사방에 0.75rem 여백을 두고 떠 있는 카드였는데, 헤더 바로 아래에서 끊겨 화면이
  * 조각나 보였다. 위·왼쪽·아래를 붙이고 <b>오른쪽 모서리만</b> 둥글게 두면 헤더에서 이어져
  * 내려온 한 덩어리로 읽힌다. 그림자도 지도 쪽(오른쪽)으로만 드리운다.
+ *
+ * <p><b>헤더와 같은 딥 네이비다</b>(2026-11-24 사용자 요청으로 전면 리뉴얼). 종전에는 흰
+ * 패널이었는데 어두운 헤더 바로 아래라 대비가 너무 세고, 그 안의 단추들이 하나하나 눈에
+ * 튀었다. 색은 전부 `theme.js` 에서 가져온다 — 여기에 직접 적지 말 것.
  */
 const panelStyle = {
   position: "absolute",
   inset: 0,
   display: "flex",
   flexDirection: "column",
-  background: "#ffffff",
+  background: colors.shell,
   // 맞닿는 쪽(위·왼쪽·아래)은 테두리를 두지 않는다 — 두면 붙은 느낌이 깨진다
-  borderRight: "1px solid #e2e8f0",
+  borderRight: `1px solid ${colors.line}`,
   borderRadius: "0 14px 14px 0",
-  boxShadow: "6px 0 24px rgba(15, 23, 42, 0.10)",
+  boxShadow: "6px 0 28px rgba(4, 9, 20, 0.45)",
   overflow: "hidden",
+  color: colors.text,
 };
 
 /**
@@ -435,22 +454,20 @@ const panelStyle = {
 const complexPanelStyle = panelStyle;
 
 /** 상세 위의 얇은 띠 — 지금 보고 있는 지역과 접기 버튼만 둔다(단지 이름은 상세가 적는다). */
-// 지역 보기 머리말과 **같은 밝은 톤**이다 — 상세로 바뀔 때 띠 색이 변하면 패널이 다른 창으로
-// 바뀐 것처럼 보인다. 상세는 글씨가 작아 바탕만 한 톤 눌러 구분한다.
 const complexTopStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   gap: "0.5rem",
   padding: "0.5rem 0.6rem 0.5rem 0.95rem",
-  background: "#f8fafc",
-  borderBottom: "1px solid #e2e8f0",
+  background: colors.raised,
+  borderBottom: `1px solid ${colors.line}`,
   flexShrink: 0,
 };
 
 const complexTopTextStyle = {
   fontSize: "0.8rem",
-  color: "#64748b",
+  color: colors.textFaint,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -470,54 +487,48 @@ const handleStyle = {
   alignItems: "center",
   justifyContent: "center",
   padding: 0,
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.surfaceSolid,
+  border: `1px solid ${colors.line}`,
   borderLeft: "none",
   borderRadius: "0 6px 6px 0",
-  boxShadow: "2px 0 6px rgba(15, 23, 42, 0.12)",
-  color: "#64748b",
+  boxShadow: "2px 0 8px rgba(4, 9, 20, 0.4)",
+  color: colors.textSoft,
   cursor: "pointer",
   transition: "background 0.2s ease, color 0.2s ease",
 };
 
-const handleHoverStyle = { background: "#f8fafc", color: "#1e293b" };
+const handleHoverStyle = { background: colors.raisedHover, color: colors.text };
 
 const handleIconStyle = { transition: "transform 0.3s ease" };
 
-// 머리말은 **밝게 둔다**(2026-10-29). 한때 헤더와 같은 딥 네이비로 맞췄는데, 헤더 바로 아래에
-// 같은 어두운 띠가 또 생겨 **검은 띠가 두 층**으로 보이고 그 경계가 두드러졌다(사용자 지적).
-// 지도 서비스의 `.panel-header` 도 흰 배경 + 아래 테두리다 — 어두운 헤더와 밝은 패널이
-// 대비로 자연스럽게 나뉜다.
+// 머리말은 패널과 같은 바탕에 **아래 선만** 둔다. 종전에는 흰 띠여서 어두운 헤더 아래로
+// 밝은 줄이 하나 더 생겼다 — 같은 톤으로 이어 두는 쪽이 한 덩어리로 읽힌다.
 const panelHeadStyle = {
   display: "flex",
   alignItems: "flex-start",
   justifyContent: "space-between",
   gap: "0.6rem",
   padding: "0.85rem 0.95rem 0.75rem",
-  background: "#ffffff",
-  borderBottom: "1px solid #e2e8f0",
+  background: "transparent",
+  borderBottom: `1px solid ${colors.line}`,
 };
 
 const panelRegionStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "1.02rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
 };
 
-const panelLevelStyle = {
-  fontSize: "0.78rem",
-  color: "#64748b",
-  marginTop: "0.18rem",
-};
+const panelLevelStyle = { fontSize: "0.78rem", color: colors.textFaint, marginTop: "0.18rem" };
 
 const filterBoxStyle = {
   padding: "0.65rem 0.95rem",
-  background: "#f8fafc",
-  borderBottom: "1px solid #e9eef5",
+  background: colors.raised,
+  borderBottom: `1px solid ${colors.line}`,
   display: "flex",
   flexDirection: "column",
   gap: "0.4rem",
@@ -528,28 +539,19 @@ const filterRowStyle = { display: "flex", gap: "0.35rem", alignItems: "center" }
 // 폭만 정한다 — 테두리·색·둥근 모서리는 공용 드롭다운(`Dropdown.js`)이 들고 있다
 const selectStyle = { flex: 1, minWidth: 0 };
 
-const tildeStyle = { color: "#94a3b8", fontSize: "0.8rem" };
+const tildeStyle = { color: colors.textFaint, fontSize: "0.8rem" };
 
 const tabRowStyle = {
   display: "flex",
   gap: "0.3rem",
   padding: "0.6rem 0.9rem",
-  borderBottom: "1px solid #f1f5f9",
+  borderBottom: `1px solid ${colors.line}`,
   flexWrap: "wrap",
 };
 
-const tabStyle = {
-  border: "1px solid #cbd5e1",
-  borderRadius: "999px",
-  padding: "0.35rem 0.85rem",
-  fontSize: "0.85rem",
-  fontWeight: 500,
-  background: "#ffffff",
-  color: "#475569",
-  cursor: "pointer",
-};
+const tabStyle = { ...chip, padding: "0.35rem 0.85rem", fontSize: "0.85rem", fontFamily: "inherit" };
 
-const activeTabStyle = { ...tabStyle, background: "#2563eb", color: "#ffffff", borderColor: "#2563eb" };
+const activeTabStyle = { ...chipOn, padding: "0.35rem 0.85rem", fontSize: "0.85rem", fontFamily: "inherit" };
 
 const panelBodyStyle = {
   flex: 1,
@@ -557,21 +559,19 @@ const panelBodyStyle = {
   padding: "0.9rem 0.95rem 1.2rem",
   fontSize: "0.875rem",
   lineHeight: 1.5,
-  color: "#1e293b",
+  color: colors.textSoft,
 };
 
 const inputStyle = {
+  ...input,
   width: "100%",
-  border: "1px solid #cbd5e1",
-  borderRadius: "8px",
   padding: "0.45rem 0.6rem",
   fontSize: "0.875rem",
-  color: "#0f172a",
   marginBottom: "0.6rem",
-  boxSizing: "border-box",
+  outline: "none",
 };
 
-const hintStyle = { fontSize: "0.82rem", color: "#64748b", lineHeight: 1.65, margin: "0 0 0.7rem" };
+const hintStyle = { fontSize: "0.82rem", color: colors.textFaint, lineHeight: 1.65, margin: "0 0 0.7rem" };
 
 const listStyle = { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.45rem" };
 
@@ -584,18 +584,18 @@ const complexItemStyle = {
   justifyContent: "space-between",
   gap: "0.75rem",
   padding: "0.65rem 0.8rem",
-  border: "1px solid #e2e8f0",
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
-  background: "#ffffff",
+  background: colors.raised,
   cursor: "pointer",
   textAlign: "left",
+  fontFamily: "inherit",
 };
 
 const complexItemActiveStyle = {
   ...complexItemStyle,
-  background: "#eff6ff",
-  borderColor: "#2563eb",
-  boxShadow: "0 0 0 1px #2563eb inset",
+  background: colors.accentSoft,
+  borderColor: colors.accentSolid,
 };
 
 const complexItemMainStyle = {
@@ -618,25 +618,25 @@ const complexItemSideStyle = {
 const complexNameStyle = {
   fontSize: "0.95rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   lineHeight: 1.35,
   overflow: "hidden",
   textOverflow: "ellipsis",
   whiteSpace: "nowrap",
 };
 
-// #94a3b8 은 흰 배경에서 대비가 모자랐다(WCAG 4.5:1 미달) — 한 단계 진하게
-const complexMetaStyle = { fontSize: "0.8rem", color: "#64748b", lineHeight: 1.4 };
+const complexMetaStyle = { fontSize: "0.8rem", color: colors.textFaint, lineHeight: 1.4 };
 
-const complexPriceStyle = { fontSize: "0.92rem", fontWeight: 700, color: "#1d4ed8", lineHeight: 1.3 };
-const complexCountStyle = { fontSize: "0.76rem", color: "#94a3b8", lineHeight: 1.3 };
+// 어두운 바탕에서 진한 파랑(#1d4ed8)은 묻힌다 — **밝은 파랑**을 쓴다.
+const complexPriceStyle = { fontSize: "0.92rem", fontWeight: 700, color: colors.accent, lineHeight: 1.3 };
+const complexCountStyle = { fontSize: "0.76rem", color: colors.textFaint, lineHeight: 1.3 };
 
 // 구역 제목은 본문보다 확실히 커야 묶음이 눈에 들어온다(0.92 → 1rem)
 const blockTitleStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "1rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   margin: "1.1rem 0 0.5rem",
   letterSpacing: "-0.01em",
 };
@@ -646,18 +646,18 @@ const compositionStyle = {
   display: "flex",
   flexDirection: "column",
   gap: "0.4rem",
-  border: "1px solid #e2e8f0",
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   padding: "0.7rem 0.8rem",
-  background: "#fbfdff",
+  background: colors.raised,
 };
 
 const compositionRowStyle = { display: "flex", justifyContent: "space-between", gap: "0.6rem" };
-const compositionLabelStyle = { fontSize: "0.84rem", color: "#64748b", margin: 0, lineHeight: 1.5 };
+const compositionLabelStyle = { fontSize: "0.84rem", color: colors.textFaint, margin: 0, lineHeight: 1.5 };
 const compositionValueStyle = {
   fontSize: "0.88rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   margin: 0,
   textAlign: "right",
   lineHeight: 1.5,

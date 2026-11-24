@@ -61,6 +61,38 @@ async function get(path, params) {
 }
 
 /**
+ * 보내는 요청(POST · PUT · DELETE). <b>회원 기능에서만 쓴다</b> — 실거래 조회는 전부 GET 이다.
+ *
+ * <p>오류 꺼내는 방식은 `get()` 과 같게 맞춘다. 다르면 화면이 두 가지 오류 모양을 알아야 한다.
+ */
+async function send(method, path, body) {
+  const headers = { ...authHeaders() };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(getApiBaseUrl() + PREFIX + path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (e) {
+    data = null;
+  }
+  if (!response.ok) {
+    const detail = data && data.detail;
+    const message =
+      (detail && detail.message) || "요청에 실패했습니다 (HTTP " + response.status + ")";
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = (detail && detail.code) || "";
+    throw error;
+  }
+  return data;
+}
+
+/**
  * 매물 종류. 아파트만 서비스하고 나머지는 준비 중이다.
  *
  * `id` 가 그대로 API 경로 조각이 된다(`/estate/<id>/trade/monthly`) — 국토교통부가 매물
@@ -146,6 +178,48 @@ export const fetchComplexRentTrades = (type, aptSeq, params) =>
 // 핀 응답에 함께 담지 않는다(폴리곤 하나가 수십 KB 라 화면의 300개를 보내면 수 MB 가 된다).
 export const fetchComplexBoundary = (type, aptSeq, umdNm) =>
   get(`/${type}/complexes/${encodeURIComponent(aptSeq)}/boundary`, { umdNm });
+
+// ---------------------------------------------------------------------------
+// 회원 기능 — 즐겨찾기 · 최근 본 단지 · 메모 · 내 정보 (2026-11-24)
+//
+// 로그인 토큰은 `authHeaders()` 가 알아서 붙인다. **표가 아직 없으면 오류가 아니라
+// `ready:false`** 로 오므로, 화면은 `fetchMemberStatus()` 를 먼저 보고 단추를 보일지 정한다.
+// ---------------------------------------------------------------------------
+
+/** 회원 기능을 쓸 수 있는 상태인지. 로그인 없이 부를 수 있다. */
+export const fetchMemberStatus = () => get("/member/status");
+
+/** 내 정보(계정·개수·새 거래가 있는 단지 수). */
+export const fetchMemberMe = () => get("/member/me");
+
+export const fetchFavorites = () => get("/member/favorites");
+export const fetchFavoriteKeys = () => get("/member/favorites/keys");
+export const addFavorite = (aptSeq, body) =>
+  send("POST", `/member/favorites/${encodeURIComponent(aptSeq)}`, body || {});
+export const removeFavorite = (aptSeq) =>
+  send("DELETE", `/member/favorites/${encodeURIComponent(aptSeq)}`);
+/** 그 단지를 열어 봤으니 "새 거래" 표시를 지운다. */
+export const markFavoriteSeen = (aptSeq) =>
+  send("POST", `/member/favorites/${encodeURIComponent(aptSeq)}/seen`);
+
+export const fetchRecent = () => get("/member/recent");
+export const touchRecent = (aptSeq, body) =>
+  send("POST", `/member/recent/${encodeURIComponent(aptSeq)}`, body || {});
+export const clearRecent = () => send("DELETE", "/member/recent");
+
+export const fetchNotes = () => get("/member/notes");
+export const fetchNote = (aptSeq) => get(`/member/notes/${encodeURIComponent(aptSeq)}`);
+/** 빈 내용으로 저장하면 지운다(서버가 그렇게 처리한다). */
+export const saveNote = (aptSeq, note, propertyType = "apt") =>
+  send("PUT", `/member/notes/${encodeURIComponent(aptSeq)}`, {
+    note,
+    property_type: propertyType,
+  });
+
+/** 로그인했는지 — 토큰이 있는지로만 본다(확인은 서버가 한다). */
+export function isLoggedIn() {
+  return Boolean(window.SjLabAuth && window.SjLabAuth.getToken());
+}
 
 // ---------------------------------------------------------------------------
 // 표시 도우미 — 원천 금액 단위가 만원이라 그대로 보여 주면 읽기 어렵다

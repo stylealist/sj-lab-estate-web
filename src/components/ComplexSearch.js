@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchComplexSearch } from "../api";
+import { colors, rowHeight } from "../theme";
 
 /**
  * 지도 위에 띄우는 전국 단지 검색창.
@@ -233,17 +234,22 @@ function ComplexSearch({ propertyType, onSelect, disabled }) {
 
 const wrapStyle = { position: "relative", flexShrink: 0 };
 
-// 지도 위에 뜨는 흰 카드. 폭은 화면이 좁을 때 지도를 다 덮지 않도록 한 번 줄인다.
+// 지도 위에 뜨는 카드. 헤더와 같은 딥 네이비 톤이고(`theme.js`), 폭은 화면이 좁을 때
+// 지도를 다 덮지 않도록 한 번 줄인다.
 const fieldStyle = {
   display: "flex",
   alignItems: "center",
   gap: "0.45rem",
   width: "min(17rem, calc(100vw - 8rem))",
-  padding: "0.45rem 0.55rem 0.45rem 0.7rem",
+  // 높이는 조건 거르개와 **같은 값**을 받는다(`theme.js` 의 rowHeight) — 각자 여백으로
+  // 정하면 1~2px 어긋난다. 그래서 위아래 여백을 주지 않고 가운데 정렬로 맞춘다.
+  height: rowHeight,
+  boxSizing: "border-box",
+  padding: "0 0.55rem 0 0.7rem",
   borderRadius: "999px",
-  border: "1px solid #dbe3ee",
-  background: "#ffffff",
-  boxShadow: "0 4px 16px rgba(15, 23, 42, 0.14)",
+  border: `1px solid ${colors.line}`,
+  background: colors.surface,
+  boxShadow: colors.shadowSoft,
   transition: "border-color 0.15s ease, box-shadow 0.15s ease",
 };
 
@@ -251,11 +257,11 @@ const fieldStyle = {
 // `borderColor` 만 바꾸면 React 가 "줄임말과 낱개 속성을 섞지 말라"고 경고하고
 // 포커스를 풀 때 테두리가 사라지는 일이 생긴다(2026-11-17 콘솔 경고로 확인).
 const fieldFocusStyle = {
-  border: "1px solid #93b4f0",
-  boxShadow: "0 6px 20px rgba(15, 23, 42, 0.2)",
+  border: `1px solid ${colors.lineStrong}`,
+  boxShadow: colors.shadow,
 };
 
-const iconStyle = { flexShrink: 0, color: "#64748b" };
+const iconStyle = { flexShrink: 0, color: colors.textFaint };
 
 const inputStyle = {
   flex: 1,
@@ -263,7 +269,7 @@ const inputStyle = {
   border: "none",
   outline: "none",
   background: "transparent",
-  color: "#0f172a",
+  color: colors.text,
   fontSize: "0.86rem",
   fontFamily: "inherit",
 };
@@ -272,7 +278,7 @@ const clearButtonStyle = {
   flexShrink: 0,
   border: "none",
   background: "transparent",
-  color: "#94a3b8",
+  color: colors.textFaint,
   cursor: "pointer",
   fontSize: "0.75rem",
   lineHeight: 1,
@@ -288,10 +294,10 @@ const panelStyle = {
   maxHeight: "22rem",
   overflowY: "auto",
   overscrollBehavior: "contain",
-  background: "#ffffff",
-  borderRadius: "0.6rem",
-  border: "1px solid #e2e8f0",
-  boxShadow: "0 12px 28px rgba(15, 23, 42, 0.18)",
+  background: colors.surfaceSolid,
+  borderRadius: "0.7rem",
+  border: `1px solid ${colors.line}`,
+  boxShadow: colors.shadow,
   zIndex: 1200,
   padding: "0.3rem",
 };
@@ -299,14 +305,14 @@ const panelStyle = {
 const noteStyle = {
   padding: "0.7rem 0.6rem",
   fontSize: "0.82rem",
-  color: "#64748b",
+  color: colors.textSoft,
   display: "flex",
   flexDirection: "column",
   gap: "0.2rem",
 };
 
-const noteStrongStyle = { color: "#334155" };
-const noteHintStyle = { fontSize: "0.76rem", color: "#94a3b8" };
+const noteStrongStyle = { color: colors.text };
+const noteHintStyle = { fontSize: "0.76rem", color: colors.textFaint };
 
 const rowStyle = {
   width: "100%",
@@ -316,21 +322,21 @@ const rowStyle = {
   gap: "0.6rem",
   padding: "0.48rem 0.55rem",
   border: "none",
-  borderRadius: "0.45rem",
+  borderRadius: "0.5rem",
   background: "transparent",
   cursor: "pointer",
   textAlign: "left",
   fontFamily: "inherit",
 };
 
-const rowActiveStyle = { background: "#eff4ff" };
+const rowActiveStyle = { background: colors.raisedHover };
 
 const rowMainStyle = { display: "flex", flexDirection: "column", gap: "0.1rem", minWidth: 0 };
 
 const rowNameStyle = {
   fontSize: "0.87rem",
   fontWeight: 600,
-  color: "#1e293b",
+  color: colors.text,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -338,7 +344,7 @@ const rowNameStyle = {
 
 const rowRegionStyle = {
   fontSize: "0.76rem",
-  color: "#64748b",
+  color: colors.textFaint,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
@@ -346,25 +352,26 @@ const rowRegionStyle = {
 
 const rowSideStyle = { flexShrink: 0, display: "flex", alignItems: "center", gap: "0.35rem" };
 
-const rowCountStyle = { fontSize: "0.76rem", color: "#475569", fontVariantNumeric: "tabular-nums" };
+const rowCountStyle = { fontSize: "0.76rem", color: colors.textSoft, fontVariantNumeric: "tabular-nums" };
 
-// "전월세만" 표식. 경고가 아니라 사실 알림이라 "위치 없음" 보다 눌린 색을 쓴다.
+// "전월세만" 표식. 지도 말풍선의 청록과 **같은 계열**로 맞춰, 목록과 지도에서 같은 것이
+// 같은 색으로 보이게 한다.
 const rowRentOnlyStyle = {
   flexShrink: 0,
   fontSize: "0.68rem",
-  color: "#1d4ed8",
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
+  color: colors.teal,
+  background: colors.tealSoft,
+  border: `1px solid ${colors.teal}33`,
   borderRadius: "999px",
   padding: "0.05rem 0.35rem",
   whiteSpace: "nowrap",
 };
 
 const rowNoCoordStyle = {
-
   fontSize: "0.7rem",
-  color: "#b45309",
-  background: "#fef3c7",
+  color: colors.warn,
+  background: colors.warnSoft,
+  border: `1px solid ${colors.warnLine}`,
   borderRadius: "999px",
   padding: "0.1rem 0.35rem",
 };
@@ -372,8 +379,8 @@ const rowNoCoordStyle = {
 const moreNoteStyle = {
   padding: "0.45rem 0.6rem 0.3rem",
   fontSize: "0.75rem",
-  color: "#94a3b8",
-  borderTop: "1px solid #f1f5f9",
+  color: colors.textFaint,
+  borderTop: `1px solid ${colors.line}`,
   marginTop: "0.2rem",
 };
 

@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 
 /**
  * 저장소 · 문의 페이지 — 지도 사이트(sj-lab-mapservice)의 `#contact-page` 와 같은 구성이다.
@@ -213,14 +214,14 @@ const heroLinkStyle = {
 };
 
 const leadCardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "14px",
   padding: "1.3rem 1.5rem",
   display: "flex",
   gap: "1.1rem",
   alignItems: "flex-start",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  boxShadow: colors.shadowSoft,
 };
 
 const avatarStyle = {
@@ -228,8 +229,8 @@ const avatarStyle = {
   width: "58px",
   height: "58px",
   borderRadius: "50%",
-  background: "#eff6ff",
-  color: "#2563eb",
+  background: colors.accentSoft,
+  color: colors.accent,
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
@@ -239,22 +240,22 @@ const roleBadgeStyle = {
   display: "inline-block",
   padding: "0.15rem 0.5rem",
   borderRadius: "999px",
-  background: "#eff6ff",
-  color: "#1d4ed8",
+  background: colors.accentSoft,
+  color: colors.accent,
   fontSize: "0.72rem",
   fontWeight: 700,
 };
 
-const leadNameStyle = { marginTop: "0.4rem", fontSize: "1.05rem", fontWeight: 700, color: "#0f172a" };
-const leadPositionStyle = { marginTop: "0.2rem", fontSize: "0.85rem", color: "#475569" };
+const leadNameStyle = { marginTop: "0.4rem", fontSize: "1.05rem", fontWeight: 700, color: colors.text };
+const leadPositionStyle = { marginTop: "0.2rem", fontSize: "0.85rem", color: colors.textSoft };
 const leadQuoteStyle = {
   margin: "0.7rem 0 0",
   padding: "0.6rem 0.9rem",
-  borderLeft: "3px solid #bfdbfe",
-  background: "#f8fafc",
+  borderLeft: `${colors.line}`,
+  background: colors.raised,
   fontSize: "0.85rem",
   lineHeight: 1.7,
-  color: "#475569",
+  color: colors.textSoft,
 };
 
 const channelGridStyle = {
@@ -264,34 +265,34 @@ const channelGridStyle = {
 };
 
 const channelCardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "14px",
   padding: "1.2rem 1.3rem",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  boxShadow: colors.shadowSoft,
 };
 
-const channelTitleStyle = { fontSize: "1rem", fontWeight: 700, color: "#0f172a" };
-const channelDescStyle = { margin: "0.35rem 0 0.9rem", fontSize: "0.83rem", lineHeight: 1.65, color: "#64748b" };
+const channelTitleStyle = { fontSize: "1rem", fontWeight: 700, color: colors.text };
+const channelDescStyle = { margin: "0.35rem 0 0.9rem", fontSize: "0.83rem", lineHeight: 1.65, color: colors.textSoft };
 
 const linkListStyle = { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: "0.5rem" };
 const linkItemStyle = { display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "0.4rem" };
-const linkStyle = { color: "#1d4ed8", fontSize: "0.86rem", fontWeight: 600, textDecoration: "none" };
-const linkNoteStyle = { fontSize: "0.76rem", color: "#94a3b8" };
+const linkStyle = { color: colors.accent, fontSize: "0.86rem", fontWeight: 600, textDecoration: "none" };
+const linkNoteStyle = { fontSize: "0.76rem", color: colors.textFaint };
 
 const tipsCardStyle = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "14px",
   padding: "1.2rem 1.3rem",
 };
 
-const tipsTitleStyle = { fontSize: "0.95rem", fontWeight: 700, color: "#1e293b", marginBottom: "0.8rem" };
+const tipsTitleStyle = { fontSize: "0.95rem", fontWeight: 700, color: colors.text, marginBottom: "0.8rem" };
 const tipsGridStyle = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
   gap: "0.8rem",
 };
-const tipItemStyle = { background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "0.85rem 1rem" };
-const tipHeadStyle = { margin: 0, fontSize: "0.86rem", fontWeight: 700, color: "#1e293b" };
-const tipBodyStyle = { margin: "0.3rem 0 0", fontSize: "0.82rem", lineHeight: 1.65, color: "#64748b" };
+const tipItemStyle = { background: colors.raised, border: `${colors.line}`, borderRadius: "10px", padding: "0.85rem 1rem" };
+const tipHeadStyle = { margin: 0, fontSize: "0.86rem", fontWeight: 700, color: colors.text };
+const tipBodyStyle = { margin: "0.3rem 0 0", fontSize: "0.82rem", lineHeight: 1.65, color: colors.textSoft };

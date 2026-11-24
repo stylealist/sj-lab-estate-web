@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 import { formatManwon, formatDealDate, toPyeong } from "../api";
 
 /** 매매 거래 목록. 최근 계약일 순으로 내려온 것을 그대로 표로 그린다. */
@@ -47,7 +48,7 @@ function TradeTable({ items, loading }) {
                   {pyeong ? <div style={subTextStyle}>{pyeong}평</div> : null}
                 </td>
                 <td style={numTdStyle}>{row.floor}</td>
-                <td style={{ ...numTdStyle, fontWeight: 600, color: "#1e3a8a" }}>
+                <td style={{ ...numTdStyle, fontWeight: 600, color: colors.accent }}>
                   {formatManwon(row.deal_amount)}
                 </td>
                 <td style={numTdStyle}>{row.amount_per_m2 ? `${Number(row.amount_per_m2).toLocaleString()}만` : "-"}</td>
@@ -75,27 +76,27 @@ const tableStyle = { width: "100%", borderCollapse: "collapse", fontSize: "0.85r
 
 const thStyle = {
   textAlign: "left",
-  color: "#64748b",
+  color: colors.textSoft,
   fontWeight: 500,
   fontSize: "0.74rem",
   padding: "0.45rem 0.6rem",
-  borderBottom: "1px solid #e2e8f0",
+  borderBottom: `${colors.line}`,
   whiteSpace: "nowrap",
 };
 
 const tdStyle = {
   padding: "0.55rem 0.6rem",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#334155",
+  borderBottom: `${colors.line}`,
+  color: colors.textSoft,
   verticalAlign: "top",
   lineHeight: 1.45,
 };
 
 const numTdStyle = { ...tdStyle, textAlign: "right", whiteSpace: "nowrap" };
 
-const aptNameStyle = { color: "#0f172a", fontWeight: 500 };
+const aptNameStyle = { color: colors.text, fontWeight: 500 };
 
-const subTextStyle = { fontSize: "0.72rem", color: "#94a3b8" };
+const subTextStyle = { fontSize: "0.72rem", color: colors.textFaint };
 
 const badgeBase = {
   display: "inline-block",
@@ -105,10 +106,10 @@ const badgeBase = {
   whiteSpace: "nowrap",
 };
 
-const brokerStyle = { ...badgeBase, background: "#eff6ff", color: "#1e40af" };
+const brokerStyle = { ...badgeBase, background: colors.accentSoft, color: colors.accent };
 
-const directStyle = { ...badgeBase, background: "#f1f5f9", color: "#475569" };
+const directStyle = { ...badgeBase, background: colors.raised, color: colors.textSoft };
 
-const canceledStyle = { ...badgeBase, background: "#fee2e2", color: "#b91c1c", marginLeft: "0.3rem" };
+const canceledStyle = { ...badgeBase, background: colors.dangerSoft, color: colors.danger, marginLeft: "0.3rem" };
 
-const mutedStyle = { fontSize: "0.88rem", color: "#64748b", padding: "1.2rem 0" };
+const mutedStyle = { fontSize: "0.88rem", color: colors.textSoft, padding: "1.2rem 0" };

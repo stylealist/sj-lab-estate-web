@@ -7,6 +7,7 @@ import {
   fetchRanking,
   fetchRegions,
   fetchRentMonthly,
+  fetchMemberStatus,
   fetchStatus,
   fetchTradeMonthly,
   fetchTrades,
@@ -18,6 +19,9 @@ import EstateMap from "./components/EstateMap";
 import MapSidePanel, { mapOverlayLeft } from "./components/MapSidePanel";
 import ComplexDetail from "./components/ComplexDetail";
 import ComplexSearch from "./components/ComplexSearch";
+import PinFilter, { EMPTY_PIN_FILTER } from "./components/PinFilter";
+import MyEstate from "./components/MyEstate";
+import { colors } from "./theme";
 import LoadingBar from "./components/LoadingBar";
 import About from "./components/About";
 import Contact from "./components/Contact";
@@ -83,6 +87,9 @@ const PANEL_TABS = [
   ["trade", "매매"],
   ["rent", "전월세"],
   ["ranking", "순위"],
+  // 회원 기능(2026-11-24). 표가 없거나 로그인하지 않았어도 **탭은 남긴다** — 안에서
+  // "로그인하면 쓸 수 있습니다" 를 설명한다. 탭을 숨기면 기능이 있는지조차 알 수 없다.
+  ["mine", "내 단지"],
 ];
 
 function App() {
@@ -127,6 +134,16 @@ function App() {
   const [complexFocus, setComplexFocus] = useState(null);
   // 단지 핀 준비 상태(좌표 수집 진행률). 지도가 알려 준다.
   const [pinInfo, setPinInfo] = useState(null);
+  // 지도 핀 거르개(평형·가격·연식)와 "몇 개 중 몇 개" 표시용 숫자.
+  // 거르기는 화면에서 하므로 서버 조건으로 넘어가지 않는다(`PinFilter.js` 설명 참고).
+  const [pinFilter, setPinFilter] = useState(EMPTY_PIN_FILTER);
+  const [pinCount, setPinCount] = useState({ total: 0, shown: 0 });
+
+  // 회원 기능(관심 단지·메모)을 쓸 수 있는 상태인지. 표가 아직 없으면 false 로 오고,
+  // 그때는 단지 상세의 관심 단추를 그리지 않는다(눌러도 안 되는 단추를 두지 않는다).
+  const [memberReady, setMemberReady] = useState(false);
+  // 관심·메모가 바뀌면 이 값을 올려 "내 단지" 목록을 다시 읽게 한다.
+  const [memberReload, setMemberReload] = useState(0);
   const [panelOpen, setPanelOpen] = useState(true);
   const [fromYm, setFromYm] = useState("");
   const [toYm, setToYm] = useState("");
@@ -179,6 +196,18 @@ function App() {
         }
         setInitialLoading(false);
       });
+  }, []);
+
+  /**
+   * 회원 기능을 쓸 수 있는지 한 번 묻는다(표가 없으면 `ready:false`).
+   *
+   * 실패하면 그냥 꺼 둔다 — 회원 기능이 안 되는 것은 지도·시세를 보는 데 아무 영향이 없고,
+   * 여기서 오류를 띄우면 "부동산 데이터에 문제가 있다" 로 읽힌다.
+   */
+  useEffect(() => {
+    fetchMemberStatus()
+      .then((info) => setMemberReady(Boolean(info && info.ready)))
+      .catch(() => setMemberReady(false));
   }, []);
 
   // 고른 종류의 데이터 범위와 지역 목록. 종류를 바꾸면 다시 읽는다.
@@ -494,6 +523,8 @@ function App() {
               onRegionChange={handleMapRegionChange}
               onSelectComplex={handleSelectComplexFromMap}
               onBoundaryArea={setComplexAreaM2}
+              pinFilter={pinFilter}
+              onPinCount={setPinCount}
               onPinStatus={(info) =>
                 setPinInfo({
                   ready: Boolean(info.coordinates_ready),
@@ -519,8 +550,18 @@ function App() {
                     toYm={toYm}
                     areaM2={complexAreaM2}
                     onClose={() => setSelectedComplex(null)}
+                    memberReady={memberReady}
+                    onMemberChanged={() => setMemberReload((prev) => prev + 1)}
                   />
                 ) : null
+              }
+              mineView={
+                <MyEstate
+                  propertyType={propertyType}
+                  memberReady={memberReady}
+                  reloadKey={memberReload}
+                  onSelectComplex={handleSelectComplexFromSearch}
+                />
               }
               onToggle={() => setPanelOpen((prev) => !prev)}
               regionName={selectedRegionName}
@@ -562,6 +603,12 @@ function App() {
                 위에 그려지게 한다. */}
             <div style={mapSearchStyle(mapOverlayLeft(panelOpen, Boolean(selectedComplex)))}>
               <ComplexSearch propertyType={propertyType} onSelect={handleSelectComplexFromSearch} />
+              <PinFilter
+                filter={pinFilter}
+                onChange={setPinFilter}
+                shown={pinCount.shown}
+                total={pinCount.total}
+              />
             </div>
           </div>
         ))}
@@ -595,24 +642,29 @@ const mapSearchStyle = (left) => ({
   left: left + 12 + "px",
   zIndex: 6,
   transition: "left 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+  // 검색창과 거르개가 한 줄에 선다. `flex-start` 로 두어 거르개 패널이 펼쳐져도
+  // 검색창이 아래로 밀리지 않는다.
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "0.5rem",
 });
 
 
 
-const pageStyle = { display: "flex", flexDirection: "column", minHeight: "100vh", background: "#f8fafc" };
+const pageStyle = { display: "flex", flexDirection: "column", minHeight: "100vh", background: colors.backdrop, color: colors.text };
 
 const noticeBannerStyle = {
   padding: "0.7rem 1.5rem",
-  background: "#fffbeb",
-  color: "#b45309",
+  background: colors.warnSoft,
+  color: colors.warn,
   fontSize: "0.88rem",
   borderBottom: "1px solid #fde68a",
 };
 
 const errorBannerStyle = {
   padding: "0.7rem 1.5rem",
-  background: "#fef2f2",
-  color: "#b91c1c",
+  background: colors.dangerSoft,
+  color: colors.danger,
   fontSize: "0.88rem",
   borderBottom: "1px solid #fecaca",
 };

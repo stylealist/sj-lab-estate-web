@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 import { formatCount, formatYmLong } from "../api";
 
 /**
@@ -261,23 +262,23 @@ const metricsStyle = {
 };
 
 const metricCardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "12px",
   padding: "1rem 1.1rem",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  boxShadow: colors.shadowSoft,
 };
 
-const metricValueStyle = { fontSize: "1.35rem", fontWeight: 700, color: "#0f172a" };
-const metricLabelStyle = { marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 600, color: "#334155" };
-const metricDescStyle = { marginTop: "0.3rem", fontSize: "0.78rem", color: "#64748b", lineHeight: 1.5 };
+const metricValueStyle = { fontSize: "1.35rem", fontWeight: 700, color: colors.text };
+const metricLabelStyle = { marginTop: "0.25rem", fontSize: "0.85rem", fontWeight: 600, color: colors.textSoft };
+const metricDescStyle = { marginTop: "0.3rem", fontSize: "0.78rem", color: colors.textSoft, lineHeight: 1.5 };
 
 const cardStyle = {
-  background: "#ffffff",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "14px",
   padding: "1.4rem 1.5rem",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+  boxShadow: colors.shadowSoft,
 };
 
 const eyebrowStyle = {
@@ -285,14 +286,14 @@ const eyebrowStyle = {
   fontSize: "0.76rem",
   fontWeight: 700,
   letterSpacing: "0.04em",
-  color: "#2563eb",
+  color: colors.accent,
 };
 
-const h3Style = { margin: "0 0 1rem", fontSize: "1.12rem", fontWeight: 700, color: "#0f172a" };
-const noteStyle = { margin: "1rem 0 0", fontSize: "0.85rem", lineHeight: 1.7, color: "#475569" };
+const h3Style = { margin: "0 0 1rem", fontSize: "1.12rem", fontWeight: 700, color: colors.text };
+const noteStyle = { margin: "1rem 0 0", fontSize: "0.85rem", lineHeight: 1.7, color: colors.textSoft };
 
 const flowListStyle = { margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.55rem" };
-const flowItemStyle = { fontSize: "0.88rem", lineHeight: 1.7, color: "#334155" };
+const flowItemStyle = { fontSize: "0.88rem", lineHeight: 1.7, color: colors.textSoft };
 
 const featureGridStyle = {
   display: "grid",
@@ -301,14 +302,14 @@ const featureGridStyle = {
 };
 
 const featureCardStyle = {
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "10px",
   padding: "0.9rem 1rem",
 };
 
-const featureTitleStyle = { fontSize: "0.92rem", fontWeight: 700, color: "#1e293b" };
-const featureDescStyle = { margin: "0.35rem 0 0", fontSize: "0.83rem", lineHeight: 1.65, color: "#64748b" };
+const featureTitleStyle = { fontSize: "0.92rem", fontWeight: 700, color: colors.text };
+const featureDescStyle = { margin: "0.35rem 0 0", fontSize: "0.83rem", lineHeight: 1.65, color: colors.textSoft };
 
 const techGridStyle = {
   display: "grid",
@@ -317,15 +318,15 @@ const techGridStyle = {
 };
 
 const techCardStyle = {
-  border: "1px solid #e2e8f0",
+  border: `${colors.line}`,
   borderRadius: "10px",
   padding: "0.8rem 0.9rem",
-  background: "#ffffff",
+  background: colors.raised,
 };
 
-const techNameStyle = { fontSize: "0.75rem", fontWeight: 700, color: "#2563eb" };
-const techValueStyle = { marginTop: "0.2rem", fontSize: "0.92rem", fontWeight: 700, color: "#0f172a" };
-const techNoteStyle = { marginTop: "0.25rem", fontSize: "0.78rem", lineHeight: 1.55, color: "#64748b" };
+const techNameStyle = { fontSize: "0.75rem", fontWeight: 700, color: colors.accent };
+const techValueStyle = { marginTop: "0.2rem", fontSize: "0.92rem", fontWeight: 700, color: colors.text };
+const techNoteStyle = { marginTop: "0.25rem", fontSize: "0.78rem", lineHeight: 1.55, color: colors.textSoft };
 
 const limitListStyle = { margin: 0, paddingLeft: "1.1rem", display: "flex", flexDirection: "column", gap: "0.55rem" };
-const limitItemStyle = { fontSize: "0.88rem", lineHeight: 1.7, color: "#334155" };
+const limitItemStyle = { fontSize: "0.88rem", lineHeight: 1.7, color: colors.textSoft };

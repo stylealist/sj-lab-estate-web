@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { colors } from "../theme";
 import {
   fetchComplexDetail,
   fetchComplexMonthly,
@@ -13,6 +14,7 @@ import {
   formatYmLong,
 } from "../api";
 import TrendChart from "./TrendChart";
+import FavoriteBar from "./FavoriteBar";
 
 /**
  * 거래 내역을 한 번에 받아 오는 건수(2026-11-11).
@@ -42,7 +44,18 @@ const TRADE_LIMIT = 500;
  * @param areaM2 그 단지가 차지하는 넓이(㎡). 지도가 테두리를 받을 때 함께 알려 준다.
  * @param onClose 닫기 — 패널이 지역 보기(단지 목록)로 돌아간다.
  */
-function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM2, onClose }) {
+function ComplexDetail({
+  propertyType,
+  aptSeq,
+  umdNm,
+  aptNm,
+  fromYm,
+  toYm,
+  areaM2,
+  onClose,
+  memberReady,
+  onMemberChanged,
+}) {
   const [detail, setDetail] = useState(null);
   const [pyeong, setPyeong] = useState(null);
   const [mode, setMode] = useState("trade"); // trade | rent
@@ -192,6 +205,16 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
         </button>
       </div>
 
+      {/* 관심 담기 · 내 메모 (로그인했고 회원 표가 준비된 경우에만 그려진다) */}
+      <FavoriteBar
+        propertyType={propertyType}
+        aptSeq={aptSeq}
+        umdNm={(detail && detail.umd_nm) || umdNm}
+        aptNm={(detail && detail.apt_nm) || aptNm}
+        memberReady={memberReady}
+        onChanged={onMemberChanged}
+      />
+
       {error ? (
         <p style={errorStyle}>{error}</p>
       ) : !detail || !firstLoaded ? (
@@ -286,8 +309,8 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                 items={rentMonthly}
                 lineKey={depositMissing ? "avg_monthly_rent" : "avg_jeonse_deposit"}
                 lineLabel={depositMissing ? "평균 월세액" : "평균 전세 보증금"}
-                lineColor="#047857"
-                barColor="#bbf7d0"
+                lineColor={colors.teal}
+                barColor={colors.tealBar}
               />
             )}
           </div>
@@ -317,7 +340,7 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                   <tr key={row.ym}>
                     <td style={tdStyle}>{formatYm(row.ym)}</td>
                     <td style={tdNumStyle}>{formatCount(row.deal_count)}</td>
-                    <td style={{ ...tdNumStyle, fontWeight: 600, color: "#1d4ed8" }}>
+                    <td style={{ ...tdNumStyle, fontWeight: 600, color: colors.accent }}>
                       {formatManwonShort(row.avg_amount)}
                     </td>
                     <td style={tdNumStyle}>
@@ -343,7 +366,7 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                     <td style={tdNumStyle}>
                       {row.jeonse_count > 0 ? (
                         <>
-                          <strong style={{ color: "#047857" }}>
+                          <strong style={{ color: colors.teal }}>
                             {row.avg_jeonse_deposit
                               ? formatManwonShort(row.avg_jeonse_deposit)
                               : `${formatCount(row.jeonse_count)}건`}
@@ -417,7 +440,7 @@ function ComplexDetail({ propertyType, aptSeq, umdNm, aptNm, fromYm, toYm, areaM
                           <td style={{ ...tdNumStyle, fontWeight: 600 }}>{formatManwon(row.deal_amount)}</td>
                         ) : (
                           <td style={tdNumStyle}>
-                            <strong style={{ color: Number(row.monthly_rent) > 0 ? "#1e293b" : "#047857" }}>
+                            <strong style={{ color: Number(row.monthly_rent) > 0 ? colors.text : colors.teal }}>
                               {row.deposit ? formatManwon(row.deposit) : "보증금 없음"}
                               {Number(row.monthly_rent) > 0
                                 ? ` / ${Number(row.monthly_rent).toLocaleString()}만`
@@ -502,7 +525,7 @@ function DetailSkeleton() {
 
 const skeletonBoxStyle = {
   display: "block",
-  background: "#e8edf4",
+  background: colors.raisedHover,
   borderRadius: "8px",
   transition: "opacity 0.6s ease",
 };
@@ -518,7 +541,7 @@ const detailStyle = {
   width: "100%",
   height: "100%",
   minHeight: 0,
-  background: "#ffffff",
+  background: colors.raised,
 };
 
 const headStyle = {
@@ -527,42 +550,47 @@ const headStyle = {
   justifyContent: "space-between",
   gap: "0.6rem",
   padding: "0.7rem 0.85rem 0.6rem",
-  borderBottom: "1px solid #f1f5f9",
-  background: "#f8fafc",
+  borderBottom: `${colors.line}`,
+  background: colors.raised,
 };
 
 const titleStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "1.02rem",
   fontWeight: 700,
-  color: "#0f172a",
+  color: colors.text,
   whiteSpace: "nowrap",
   overflow: "hidden",
   textOverflow: "ellipsis",
 };
 
-const addressStyle = { marginTop: "0.2rem", fontSize: "0.82rem", color: "#64748b", lineHeight: 1.45 };
+const addressStyle = { marginTop: "0.2rem", fontSize: "0.82rem", color: colors.textSoft, lineHeight: 1.45 };
 
-/** 단지 영역 넓이 — 지도 테두리 색(주황)과 같은 계열로 적어 "저 테두리의 값"임을 잇는다. */
+/**
+ * 단지 영역 넓이 — 지도 테두리 색(주황)과 같은 계열로 적어 "저 테두리의 값"임을 잇는다.
+ *
+ * <p><b>어두운 바탕에서는 진한 주황(`#9a3412`)이 묻힌다</b>(2026-11-24 사용자 지적 — 글자가
+ * 거의 안 보였다). 같은 "주황 계열" 을 유지하되 **밝은 쪽**으로 뒤집는다.
+ */
 const areaStyle = {
   marginTop: "0.35rem",
   fontSize: "0.78rem",
-  color: "#9a3412",
-  background: "#fff7ed",
-  border: "1px solid #fed7aa",
+  color: colors.areaText,
+  background: colors.warnSoft,
+  border: `1px solid ${colors.areaLine}`,
   borderRadius: "6px",
   padding: "0.15rem 0.4rem",
   display: "inline-block",
 };
 
 const closeStyle = {
-  border: "1px solid #e2e8f0",
-  background: "#ffffff",
+  border: `${colors.line}`,
+  background: colors.raised,
   borderRadius: "8px",
   width: "26px",
   height: "26px",
   cursor: "pointer",
-  color: "#64748b",
+  color: colors.textSoft,
   flexShrink: 0,
 };
 
@@ -579,18 +607,18 @@ const chipRowStyle = { display: "flex", flexWrap: "wrap", gap: "0.35rem" };
 
 // 칩이 작아 누르기도 읽기도 어려웠다(2026-10-28 가독성 지적) — 글씨와 여백을 올렸다
 const chipStyle = {
-  border: "1px solid #cbd5e1",
+  border: `${colors.line}`,
   borderRadius: "999px",
   padding: "0.3rem 0.75rem",
   fontSize: "0.85rem",
   fontWeight: 500,
-  background: "#ffffff",
-  color: "#475569",
+  background: colors.raised,
+  color: colors.textSoft,
   cursor: "pointer",
   lineHeight: 1.3,
 };
 
-const chipActiveStyle = { ...chipStyle, background: "#eff6ff", borderColor: "#2563eb", color: "#1d4ed8", fontWeight: 600 };
+const chipActiveStyle = { ...chipStyle, background: colors.accentSoft, borderColor: "#2563eb", color: colors.accent, fontWeight: 600 };
 
 const modeRowStyle = {
   display: "flex",
@@ -601,48 +629,48 @@ const modeRowStyle = {
 };
 
 const modeStyle = {
-  border: "1px solid #cbd5e1",
+  border: `${colors.line}`,
   borderRadius: "8px",
   padding: "0.35rem 0.9rem",
   fontSize: "0.875rem",
-  background: "#ffffff",
-  color: "#475569",
+  background: colors.raised,
+  color: colors.textSoft,
   cursor: "pointer",
 };
 
-const modeActiveStyle = { ...modeStyle, background: "#2563eb", borderColor: "#2563eb", color: "#ffffff", fontWeight: 600 };
+const modeActiveStyle = { ...modeStyle, background: colors.accentSolid, borderColor: colors.accentSolid, color: "#ffffff", fontWeight: 600 };
 
 const periodStyle = {
-  border: "1px solid #e2e8f0",
+  border: `${colors.line}`,
   borderRadius: "8px",
   padding: "0.35rem 0.7rem",
   fontSize: "0.82rem",
-  background: "#f8fafc",
-  color: "#64748b",
+  background: colors.raised,
+  color: colors.textSoft,
   cursor: "pointer",
 };
 
 const headlineStyle = {
   marginTop: "0.7rem",
   padding: "0.75rem 0.9rem",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  background: colors.raised,
+  border: `${colors.line}`,
   borderRadius: "10px",
   display: "flex",
   flexDirection: "column",
   gap: "0.1rem",
 };
 
-const headlineLabelStyle = { fontSize: "0.82rem", color: "#64748b", lineHeight: 1.4 };
+const headlineLabelStyle = { fontSize: "0.82rem", color: colors.textSoft, lineHeight: 1.4 };
 const headlineValueStyle = {
   fontSize: "1.5rem",
   fontWeight: 700,
-  color: "#1d4ed8",
+  color: colors.accent,
   lineHeight: 1.25,
   letterSpacing: "-0.015em",
   fontVariantNumeric: "tabular-nums",
 };
-const headlineSubStyle = { fontSize: "0.8rem", color: "#64748b", lineHeight: 1.45 };
+const headlineSubStyle = { fontSize: "0.8rem", color: colors.textSoft, lineHeight: 1.45 };
 
 const chartBoxStyle = { marginTop: "0.6rem" };
 
@@ -650,12 +678,12 @@ const subTitleStyle = {
   fontFamily: "Poppins, Inter, sans-serif",
   fontSize: "0.95rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   margin: "1.15rem 0 0.45rem",
   letterSpacing: "-0.01em",
 };
 
-const noteStyle = { margin: 0, fontSize: "0.84rem", color: "#64748b", lineHeight: 1.55 };
+const noteStyle = { margin: 0, fontSize: "0.84rem", color: colors.textSoft, lineHeight: 1.55 };
 
 /** 소제목 줄 — 왼쪽 제목, 오른쪽 건수. 제목의 바깥 여백은 이 줄이 가진다. */
 const subTitleRowStyle = {
@@ -670,35 +698,35 @@ const subTitleInlineStyle = { ...subTitleStyle, margin: 0 };
 
 const countBadgeStyle = {
   fontSize: "0.78rem",
-  color: "#64748b",
+  color: colors.textSoft,
   fontVariantNumeric: "tabular-nums",
   flexShrink: 0,
 };
 
-const moreNoteStyle = { margin: "0.4rem 0 0", fontSize: "0.76rem", color: "#94a3b8", lineHeight: 1.5 };
+const moreNoteStyle = { margin: "0.4rem 0 0", fontSize: "0.76rem", color: colors.textFaint, lineHeight: 1.5 };
 
 const warnStyle = {
   margin: "0 0 0.4rem",
   padding: "0.4rem 0.5rem",
   border: "1px solid #fde68a",
   borderRadius: "8px",
-  background: "#fffbeb",
+  background: colors.warnSoft,
   fontSize: "0.8rem",
   lineHeight: 1.6,
-  color: "#92400e",
+  color: colors.warn,
 };
-const errorStyle = { margin: 0, padding: "0.9rem 0.85rem", fontSize: "0.875rem", color: "#b91c1c" };
+const errorStyle = { margin: 0, padding: "0.9rem 0.85rem", fontSize: "0.875rem", color: colors.danger };
 
 // 오류가 아니라 **안내**다 — 붉은색을 쓰지 않고 호박색 띠로 둔다.
 const noTradeNoteStyle = {
   margin: "0.55rem 0 0",
   padding: "0.5rem 0.65rem",
   borderRadius: "8px",
-  background: "#fffbeb",
+  background: colors.warnSoft,
   border: "1px solid #fde68a",
   fontSize: "0.82rem",
   lineHeight: 1.5,
-  color: "#92400e",
+  color: colors.warn,
 };
 
 // 숫자 표는 **자리폭이 같아야**(tabular-nums) 위아래로 비교된다. 줄 간격이 없어 숫자가
@@ -713,8 +741,8 @@ const tableStyle = {
 const thStyle = {
   textAlign: "left",
   padding: "0.4rem 0.4rem",
-  borderBottom: "1px solid #e2e8f0",
-  color: "#64748b",
+  borderBottom: `${colors.line}`,
+  color: colors.textSoft,
   fontWeight: 600,
   fontSize: "0.78rem",
   whiteSpace: "nowrap",
@@ -724,15 +752,15 @@ const thNumStyle = { ...thStyle, textAlign: "right" };
 
 const tdStyle = {
   padding: "0.45rem 0.4rem",
-  borderBottom: "1px solid #f1f5f9",
-  color: "#1e293b",
+  borderBottom: `${colors.line}`,
+  color: colors.text,
   lineHeight: 1.45,
   whiteSpace: "nowrap",
 };
 
 const tdNumStyle = { ...tdStyle, textAlign: "right", fontWeight: 500 };
 
-const cellSubStyle = { display: "block", fontSize: "0.74rem", color: "#94a3b8", lineHeight: 1.35 };
+const cellSubStyle = { display: "block", fontSize: "0.74rem", color: colors.textFaint, lineHeight: 1.35 };
 
 /**
  * 거래 내역 상자(2026-11-11).
@@ -748,9 +776,9 @@ const scrollBoxStyle = {
   maxHeight: "19rem",
   overflowY: "auto",
   overflowX: "hidden",
-  border: "1px solid #e2e8f0",
+  border: `${colors.line}`,
   borderRadius: "10px",
-  background: "#ffffff",
+  background: colors.raised,
   overscrollBehavior: "contain",
   WebkitOverflowScrolling: "touch",
 };
@@ -769,9 +797,9 @@ const stickyThStyle = {
   position: "sticky",
   top: 0,
   zIndex: 1,
-  background: "#f8fafc",
+  background: colors.raised,
   border: "none",
-  boxShadow: "inset 0 -1px 0 #e2e8f0",
+  boxShadow: `inset 0 -1px 0 ${colors.line}`,
 };
 
 const stickyThNumStyle = { ...stickyThStyle, textAlign: "right" };
@@ -779,8 +807,8 @@ const stickyThNumStyle = { ...stickyThStyle, textAlign: "right" };
 const footNoteStyle = {
   margin: "1rem 0 0",
   paddingTop: "0.7rem",
-  borderTop: "1px dashed #e2e8f0",
+  borderTop: `${colors.line}`,
   fontSize: "0.78rem",
   lineHeight: 1.65,
-  color: "#64748b",
+  color: colors.textSoft,
 };

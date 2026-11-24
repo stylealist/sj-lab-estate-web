@@ -17,6 +17,8 @@ import {
   formatManwon,
   formatManwonShort,
 } from "../api";
+import { pinMatchesFilter } from "./PinFilter";
+import { colors, pill } from "../theme";
 
 /**
  * 부동산 지도 — 호갱노노식 화면의 본체.
@@ -75,12 +77,23 @@ const OL_BASE_CSS = `
 .ol-viewport, .ol-unselectable { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .ol-viewport { touch-action: pan-x pan-y; }
 .ol-viewport canvas { all: unset; overflow: hidden; }
-.ol-control { position: absolute; background-color: rgba(255,255,255,0.75); border-radius: 6px; padding: 2px; }
-.ol-control button { display: block; margin: 1px; padding: 0; width: 1.7em; height: 1.7em; font-size: 1rem; font-weight: 700; line-height: 1; color: #475569; background: #ffffff; border: none; border-radius: 4px; cursor: pointer; }
-.ol-control button:hover { color: #0f172a; }
-.ol-zoom { top: 0.7em; left: 0.7em; }
-.ol-attribution { right: 0.5em; bottom: 0.5em; text-align: right; max-width: calc(100% - 1.3em); display: flex; flex-flow: row-reverse; align-items: center; }
-.ol-attribution ul { margin: 0; padding: 1px 0.5em; font-size: 11px; color: #475569; }
+/* 지도 기본 단추도 화면 톤(딥 네이비)에 맞춘다 — 흰 단추만 남으면 거기만 튄다. */
+.ol-control { position: absolute; background-color: rgba(27,49,89,0.92); border: 1px solid rgba(148,178,232,0.22); border-radius: 10px; padding: 2px; box-shadow: 0 4px 14px rgba(4,9,20,0.34); }
+.ol-control button { display: block; margin: 1px; padding: 0; width: 1.8em; height: 1.8em; font-size: 1rem; font-weight: 700; line-height: 1; color: rgba(226,232,240,0.78); background: transparent; border: none; border-radius: 7px; cursor: pointer; }
+.ol-control button:hover { color: #f8fafc; background: rgba(148,178,232,0.2); }
+/*
+  확대·축소 단추는 **오른쪽 아래**다(2026-11-24 사용자 요청). 기본값인 왼쪽 위는 왼쪽 패널
+  (380~420px)에 완전히 가려 패널을 접지 않으면 쓸 수 없었다. 왼쪽에 둘 것을 추가하지 말 것.
+
+  **출처(ⓘ) 단추와 오른쪽 여백·칸 크기를 같게 맞춘다.** 종전에는 확대 단추가 0.7em, 출처가
+  0.5em 이라 위아래로 어긋나 보였다(사용자 지적). 두 값을 따로 두지 말 것 —
+  CSS 변수 --ol-right 하나로 묶어 두었다.
+  (이 문자열 안에서는 역따옴표를 쓰지 말 것 — 템플릿 문자열이 여기서 닫혀 버린다.)
+*/
+.ol-control { --ol-right: 0.7em; }
+.ol-zoom { top: auto; left: auto; right: var(--ol-right); bottom: 3.3em; }
+.ol-attribution { right: var(--ol-right); bottom: 0.7em; text-align: right; max-width: calc(100% - 1.3em); display: flex; flex-flow: row-reverse; align-items: center; }
+.ol-attribution ul { margin: 0; padding: 1px 0.5em; font-size: 11px; color: rgba(226,232,240,0.6); }
 .ol-attribution li { display: inline; list-style: none; }
 .ol-attribution.ol-collapsed ul { display: none; }
 `;
@@ -109,6 +122,8 @@ function EstateMap({
   onSelectComplex,
   onPinStatus,
   onBoundaryArea,
+  pinFilter,
+  onPinCount,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -144,6 +159,13 @@ function EstateMap({
   rangeRef.current = range;
   const selectedRef = useRef(selectedAptSeq);
   selectedRef.current = selectedAptSeq;
+  // 거르개는 스타일 함수 안에서 읽는다(스타일 함수는 지도를 만들 때 한 번만 묶인다).
+  // 올해는 연식 계산 기준이라 한 번만 구해 둔다.
+  const filterRef = useRef(pinFilter);
+  filterRef.current = pinFilter;
+  const thisYearRef = useRef(new Date().getFullYear());
+  // 핀이 새로 도착한 시각. 거르개 개수를 다시 세는 신호로만 쓴다.
+  const [pinLoadedAt, setPinLoadedAt] = useState(0);
   const onSelectComplexRef = useRef(onSelectComplex);
   onSelectComplexRef.current = onSelectComplex;
   // 테두리 넓이를 바깥(상세 패널)에 알리는 통로. 효과의 의존성이 흔들리지 않게 ref 로 둔다.
@@ -197,7 +219,7 @@ function EstateMap({
     });
     const pinLayer = new VectorLayer({
       source: pinSourceRef.current,
-      style: (feature) => pinStyle(feature, selectedRef.current),
+      style: (feature) => pinStyle(feature, selectedRef.current, filterRef.current, thisYearRef.current),
       declutter: true,
       zIndex: 10,
     });
@@ -438,6 +460,8 @@ function EstateMap({
         if (!probeOnly && geojson.features && geojson.features.length > 0) {
           pinSourceRef.current.addFeatures(geoJsonFormat.readFeatures(geojson));
         }
+        // 핀이 새로 들어왔으니 거르개 개수도 다시 센다(지도를 옮길 때마다 바뀐다)
+        setPinLoadedAt(Date.now());
         // 준비 안 됐다고 오면 **몇 번 더 물어본다** — 서버가 돌아오면 저절로 핀이 뜬다
         if (!geojson.coordinates_ready && pinRetry < PIN_RETRY_MAX) {
           retryTimerRef.current = setTimeout(() => setPinRetry((prev) => prev + 1), PIN_RETRY_MS);
@@ -465,6 +489,22 @@ function EstateMap({
   useEffect(() => {
     pinSourceRef.current.changed();
   }, [selectedAptSeq]);
+
+  /**
+   * 거르개가 바뀌면 다시 그리고 <b>몇 개 중 몇 개가 남았는지</b>를 화면에 알린다.
+   *
+   * <p>핀을 지우지 않고 스타일만 비우므로 `changed()` 한 번이면 된다. 개수를 함께 세는 것은
+   * 조건이 셀 때 핀이 거의 사라지는데, 그때 "이 동네에 아파트가 없다"로 읽히기 때문이다.
+   */
+  useEffect(() => {
+    pinSourceRef.current.changed();
+    if (!onPinCount) return;
+    const features = pinSourceRef.current.getFeatures();
+    const shown = features.filter((f) =>
+      pinMatchesFilter(f.getProperties(), pinFilter, thisYearRef.current)
+    ).length;
+    onPinCount({ total: features.length, shown });
+  }, [pinFilter, onPinCount, pinLoadedAt]);
 
   /**
    * 고른 단지의 테두리를 받아 그린다.
@@ -906,12 +946,19 @@ function markerIcon(label, selected) {
   const textX = badgeCx + badgeRadius + 5;
   const width = textX + textWidth + 11;
   const height = bodyHeight + tailHeight;
-  const body = selected ? "#1d4ed8" : "#ffffff";
-  const border = selected ? "#1e3a8a" : rent ? "#99f6e4" : "#c7d2e0";
-  const textColor = selected ? "#ffffff" : "#0f172a";
-  const topColor = selected ? "rgba(255,255,255,0.88)" : rent ? "#0f766e" : "#64748b";
-  const badge = selected ? "#ffffff" : rent ? "#0d9488" : "#2563eb";
-  const glyph = selected ? "#1d4ed8" : "#ffffff";
+  // **말풍선도 화면과 같은 딥 네이비다**(2026-11-24 사용자 요청). 종전에는 흰 말풍선이어서
+  // 화면 톤을 어둡게 바꾼 뒤 지도만 하얗게 떠 보였다. 밝은 배경 지도 위에서는 어두운 말풍선이
+  // 오히려 대비가 커서 더 잘 읽힌다(흰 말풍선은 흰 건물·도로와 섞인다).
+  //
+  // **투명도를 주지 말 것** — 말풍선이 겹칠 때 아래 것이 비쳐 숫자가 두 겹으로 읽힌다.
+  // 그래서 `theme.js` 의 반투명 토큰을 쓰지 않고 여기서 **단색**으로 둔다.
+  const body = selected ? "#1d4ed8" : colors.markerBody;
+  const border = selected ? "#93b4f0" : rent ? "#2dd4bf" : colors.markerBorder;
+  const textColor = selected ? "#ffffff" : colors.markerText;
+  const topColor = selected ? "rgba(255,255,255,0.88)" : rent ? "#5eead4" : colors.markerTop;
+  const badge = selected ? "#ffffff" : rent ? "#2dd4bf" : "#2563eb";
+  // 아이콘(건물)과 창문은 배지 색 위에 올라가므로 **배지와 반대 밝기**여야 보인다
+  const glyph = selected ? "#1d4ed8" : rent ? "#0b1f1c" : "#ffffff";
   const cx = width / 2;
   const cy = bodyHeight / 2;
   // 두 줄이면 위(평형)·아래(금액)로 나눠 적고, 한 줄이면 가운데에 적는다
@@ -945,8 +992,15 @@ function markerIcon(label, selected) {
   return icon;
 }
 
-function pinStyle(feature, selectedAptSeq) {
+/**
+ * 핀 하나의 모양. <b>조건에 맞지 않으면 `null` 을 돌려 아예 그리지 않는다</b> — 핀을 지웠다
+ * 다시 받으면 지도가 멈칫거리고, 안 그린 핀은 클릭 판정에도 걸리지 않아 이 방법이 안전하다.
+ */
+function pinStyle(feature, selectedAptSeq, filter, thisYear) {
   const isSelected = feature.get("apt_seq") === selectedAptSeq;
+  // 고른 단지는 조건과 무관하게 남긴다 — 보고 있던 단지가 조건을 켜는 순간 사라지면
+  // 왼쪽 상세 패널만 남아 "어디 것인지" 알 수 없다.
+  if (!isSelected && !pinMatchesFilter(feature.getProperties(), filter, thisYear)) return null;
   return new Style({
     image: markerIcon(pinLabel(feature), isSelected),
     // 고른 단지는 다른 말풍선에 밀려 사라지지 않게 위로 올린다
@@ -958,51 +1012,58 @@ const wrapStyle = {
   position: "relative",
   width: "100%",
   height: "100%",
-  background: "#eef2f7",
+  // 타일이 아직 안 온 자리. 밝은 회색이면 로딩 중에 화면이 번쩍인다.
+  background: colors.backdrop,
   overflow: "hidden",
 };
 
 const mapStyle = { width: "100%", height: "100%" };
 
-const badgeBaseStyle = {
-  position: "absolute",
-  padding: "0.35rem 0.7rem",
-  borderRadius: "999px",
-  background: "rgba(255,255,255,0.94)",
-  border: "1px solid #e2e8f0",
-  fontSize: "0.78rem",
-  color: "#475569",
-  boxShadow: "0 2px 8px rgba(15, 23, 42, 0.08)",
+const badgeBaseStyle = { ...pill, position: "absolute" };
+
+// 단계 배지("시군구 범위" · "아파트 보기")는 **오른쪽 위**다(2026-11-24 사용자 요청).
+// 종전에는 왼쪽 위(3.4rem/3.6rem)였는데 **왼쪽 패널에 완전히 가려** 패널을 접지 않으면
+// 보이지 않았다. 왼쪽 위는 검색창·거르개가 쓰고, 그것들만 패널 폭을 따라 움직인다.
+const levelBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", right: "0.75rem" };
+
+const errorBadgeStyle = {
+  ...badgeBaseStyle,
+  top: "0.75rem",
+  left: "50%",
+  transform: "translateX(-50%)",
+  color: colors.danger,
+  border: `1px solid ${colors.dangerLine}`,
 };
 
-// 단계 배지는 **한 줄 아래**다(2026-11-17) — 위 줄 왼쪽은 전국 단지 검색창이 쓴다(`App.js`).
-// 왼쪽 3.6rem 은 그대로 둔다(그 왼쪽은 지도 확대·축소 버튼 자리).
-const levelBadgeStyle = { ...badgeBaseStyle, top: "3.4rem", left: "3.6rem" };
-
-const errorBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", left: "50%", transform: "translateX(-50%)", color: "#b91c1c" };
-
+// 핀 준비 안내는 단계 배지 **아래 줄**로 내렸다(2026-11-24) — 배지가 오른쪽 위로 오면서
+// 같은 자리를 다퉜다. 두 개가 겹치면 안내 문구가 배지에 덮인다.
 const pinNoticeStyle = {
   position: "absolute",
-  top: "0.75rem",
+  top: "3.1rem",
   right: "0.75rem",
   maxWidth: "240px",
   padding: "0.55rem 0.8rem",
   borderRadius: "10px",
-  background: "rgba(255,255,255,0.96)",
-  border: "1px solid #fde68a",
+  background: colors.surface,
+  border: `1px solid ${colors.warnLine}`,
   fontSize: "0.78rem",
-  color: "#92400e",
+  color: colors.warn,
   lineHeight: 1.5,
-  boxShadow: "0 2px 10px rgba(15, 23, 42, 0.1)",
+  boxShadow: colors.shadowSoft,
 };
 
-const pinNoticeSubStyle = { display: "block", marginTop: "0.3rem", color: "#a16207", fontSize: "0.72rem" };
+const pinNoticeSubStyle = {
+  display: "block",
+  marginTop: "0.3rem",
+  color: colors.textFaint,
+  fontSize: "0.72rem",
+};
 
 /**
  * 토스트 — 지도 아래 가운데에서 올라온다(2026-11-11).
  *
- * <p>자리를 <b>아래 가운데</b>로 둔 이유: 위쪽에는 단계 배지·핀 준비 안내가 있고, 오른쪽 아래는
- * 핀에 마우스를 올렸을 때 뜨는 설명이 쓴다. 왼쪽은 패널이 덮는다.
+ * <p>자리를 <b>아래 가운데</b>로 둔 이유: 오른쪽 위에는 단계 배지·핀 준비 안내가 있고,
+ * 오른쪽 아래는 확대·축소 단추(2026-11-24 옮김)와 핀 설명이 쓴다. 왼쪽은 패널이 덮는다.
  *
  * <p><b>`pointerEvents` 는 상자에만 둔다</b> — 지도 위에 떠 있으므로 상자 밖에서는 지도를
  * 끌 수 있어야 한다. 그래서 그릇을 따로 두지 않고 상자 하나만 띄운다.
@@ -1017,11 +1078,13 @@ const toastBaseStyle = {
   maxWidth: "min(30rem, calc(100% - 2rem))",
   padding: "0.6rem 0.65rem 0.6rem 0.85rem",
   borderRadius: "12px",
-  background: "rgba(15, 23, 42, 0.94)",
-  color: "#e2e8f0",
+  // 토스트도 카드와 같은 톤이다 — 혼자 더 어두우면 지도 위에서 다른 물건처럼 보인다
+  background: "rgba(27, 49, 89, 0.96)",
+  border: `1px solid ${colors.line}`,
+  color: colors.textSoft,
   fontSize: "0.82rem",
   lineHeight: 1.45,
-  boxShadow: "0 10px 30px rgba(15, 23, 42, 0.32)",
+  boxShadow: colors.shadow,
   transition: "opacity 0.26s ease, transform 0.26s cubic-bezier(0.4, 0, 0.2, 1)",
   zIndex: 5,
 };
@@ -1061,8 +1124,8 @@ const toastActionStyle = {
   flexShrink: 0,
   padding: "0.35rem 0.7rem",
   borderRadius: "8px",
-  border: "1px solid rgba(148, 163, 184, 0.45)",
-  background: "#2563eb",
+  border: `1px solid ${colors.accentSolid}`,
+  background: colors.accentSolid,
   color: "#ffffff",
   fontSize: "0.78rem",
   fontWeight: 600,
@@ -1080,26 +1143,30 @@ const toastCloseStyle = {
   borderRadius: "8px",
   border: "none",
   background: "transparent",
-  color: "#94a3b8",
+  color: colors.textFaint,
   fontSize: "0.8rem",
   cursor: "pointer",
 };
 
+// 핀·지역 설명은 오른쪽 아래지만 **확대·축소 단추 위로** 올려 둔다(2026-11-24) — 단추가
+// 왼쪽 위에서 이 자리로 내려왔다. 겹치면 설명이 단추를 덮어 지도를 확대할 수 없다.
+// 계산: 단추 아래 여백 3.3em + 단추 묶음 높이 약 4.1em = 위쪽 끝 약 7.4em → 그보다 위에 둔다.
+// **단추의 `bottom` 을 고치면 이 값도 함께 고칠 것.**
 const tooltipStyle = {
   position: "absolute",
-  bottom: "0.75rem",
+  bottom: "8rem",
   right: "0.75rem",
   display: "flex",
   flexDirection: "column",
   gap: "0.15rem",
   padding: "0.5rem 0.8rem",
   borderRadius: "10px",
-  background: "rgba(255,255,255,0.96)",
-  border: "1px solid #e2e8f0",
+  background: colors.surface,
+  border: `1px solid ${colors.line}`,
   fontSize: "0.85rem",
-  color: "#0f172a",
+  color: colors.text,
   maxWidth: "260px",
-  boxShadow: "0 2px 10px rgba(15, 23, 42, 0.1)",
+  boxShadow: colors.shadowSoft,
 };
 
-const tooltipSubStyle = { fontSize: "0.76rem", color: "#64748b" };
+const tooltipSubStyle = { fontSize: "0.76rem", color: colors.textFaint };

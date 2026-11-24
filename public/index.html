@@ -117,13 +117,71 @@
     }
 
     body {
-      background: #f8fafc;
-      color: #0f172a;
+      background: #142440;
+      color: #e2e8f0;
       font-family: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
     }
 
     #root {
       height: 100%;
+    }
+
+    /*
+      스크롤바 — 화면 톤(딥 네이비)에 맞춘다(2026-11-24 사용자 요청).
+
+      **인라인 스타일로는 만들 수 없다.** 스크롤바는 가상 요소(::-webkit-scrollbar)로만
+      꾸밀 수 있어 전역 CSS 가 필요하다. 이 저장소에는 css 로더가 없으므로 전역 규칙은
+      여기(HtmlWebpackPlugin 이 그대로 복사하는 템플릿)에 둔다 — 별도 .css 파일로 빼지 말 것.
+
+      색은 `src/theme.js` 와 같은 계열을 **손으로 맞춰 적는다**(CSS 는 그 파일을 읽을 수 없다).
+      theme.js 의 기준색을 바꾸면 여기도 함께 고칠 것:
+        막대 rgba(148,178,232,…) = theme 의 raised/line 과 같은 계열
+        길  #142440              = theme 의 backdrop
+    */
+
+    /* 표준(파이어폭스·최신 브라우저) — 두 줄로 끝난다 */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(148, 178, 232, 0.32) transparent;
+    }
+
+    /* 웹킷(크롬·엣지·사파리) — 가로·세로 둘 다 10px 로 맞춘다 */
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+
+    /* 길은 비워 둔다 — 패널·카드 바탕이 그대로 보여야 덧붙은 띠처럼 보이지 않는다 */
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      /* 바탕보다 조금 밝은 한 겹. 테두리를 투명하게 두고 배경만 칠해 **막대가 얇아 보이게** 한다 */
+      background: rgba(148, 178, 232, 0.28);
+      border: 2px solid transparent;
+      background-clip: padding-box;
+      border-radius: 999px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(148, 178, 232, 0.45);
+      background-clip: padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:active {
+      background: rgba(148, 178, 232, 0.6);
+      background-clip: padding-box;
+    }
+
+    /* 가로·세로가 만나는 모서리. 비워 두지 않으면 **흰 네모**가 남는다 */
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* 위·아래 화살표 단추는 쓰지 않는다 — 10px 폭에 들어가면 뭉개져 보인다 */
+    ::-webkit-scrollbar-button {
+      display: none;
     }
 
     /* 초기 로딩 화면 */
@@ -132,7 +190,8 @@
       justify-content: center;
       align-items: center;
       height: 100vh;
-      color: #64748b;
+      /* 어두워진 바탕(#142440)에서 #64748b 은 대비가 3:1 이 안 돼 묻혔다 */
+      color: rgba(226, 232, 240, 0.7);
       font-size: 1rem;
       letter-spacing: 0.08em;
     }

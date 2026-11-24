@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 import { formatManwon, formatCount } from "../api";
 
 /**
@@ -46,14 +47,14 @@ const itemStyle = {
   alignItems: "center",
   gap: "0.6rem",
   padding: "0.45rem 0",
-  borderBottom: "1px solid #f1f5f9",
+  borderBottom: `${colors.line}`,
 };
 
 const rankStyle = {
   width: "22px",
   flexShrink: 0,
   fontSize: "0.78rem",
-  color: "#94a3b8",
+  color: colors.textFaint,
   textAlign: "right",
 };
 
@@ -65,7 +66,7 @@ const nameButtonStyle = {
   background: "none",
   padding: 0,
   fontSize: "0.86rem",
-  color: "#1e40af",
+  color: colors.accent,
   cursor: "pointer",
   textDecoration: "underline",
   overflow: "hidden",
@@ -77,7 +78,7 @@ const barOuterStyle = {
   flex: 1,
   minWidth: "60px",
   height: "8px",
-  background: "#e2e8f0",
+  background: colors.raisedHover,
   borderRadius: "999px",
   overflow: "hidden",
 };
@@ -94,7 +95,7 @@ const amountStyle = {
   textAlign: "right",
   fontSize: "0.84rem",
   fontWeight: 600,
-  color: "#0f172a",
+  color: colors.text,
   whiteSpace: "nowrap",
 };
 
@@ -103,8 +104,8 @@ const metaStyle = {
   flexShrink: 0,
   textAlign: "right",
   fontSize: "0.74rem",
-  color: "#94a3b8",
+  color: colors.textFaint,
   whiteSpace: "nowrap",
 };
 
-const mutedStyle = { fontSize: "0.88rem", color: "#64748b", padding: "1.2rem 0" };
+const mutedStyle = { fontSize: "0.88rem", color: colors.textSoft, padding: "1.2rem 0" };

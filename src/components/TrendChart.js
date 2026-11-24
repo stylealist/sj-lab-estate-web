@@ -1,4 +1,5 @@
 import React from "react";
+import { colors } from "../theme";
 import { formatYm, formatYmLong, formatManwon, formatCount } from "../api";
 
 /**
@@ -12,7 +13,7 @@ import { formatYm, formatYmLong, formatManwon, formatCount } from "../api";
  * @param lineKey   선으로 그릴 금액 컬럼(예: avg_amount)
  * @param lineLabel 범례에 쓸 이름
  */
-function TrendChart({ items, lineKey, lineLabel, lineColor = "#1e3a8a", barColor = "#bfdbfe" }) {
+function TrendChart({ items, lineKey, lineLabel, lineColor = colors.accent, barColor = colors.accentBar }) {
   const rows = (items || []).filter((row) => row && row.ym);
 
   if (rows.length === 0) {
@@ -70,7 +71,7 @@ function TrendChart({ items, lineKey, lineLabel, lineColor = "#1e3a8a", barColor
           const y = padTop + plotHeight * ratio;
           return (
             <g key={ratio}>
-              <line x1={padLeft} y1={y} x2={width - padRight} y2={y} stroke="#e2e8f0" strokeWidth="1" />
+              <line x1={padLeft} y1={y} x2={width - padRight} y2={y} stroke={colors.line} strokeWidth="1" />
               <text x={padLeft - 8} y={y + 4} textAnchor="end" style={axisTextStyle}>
                 {formatCount(Math.round(maxCount * (1 - ratio)))}
               </text>
@@ -107,7 +108,7 @@ function TrendChart({ items, lineKey, lineLabel, lineColor = "#1e3a8a", barColor
             cx={xOf(i)}
             cy={yOfLine(row[lineKey])}
             r={rows.length > 60 ? 1.8 : 3.2}
-            fill="#ffffff"
+            fill={colors.surfaceSolid}
             stroke={lineColor}
             strokeWidth="2"
           >
@@ -143,13 +144,13 @@ const legendItemStyle = {
   alignItems: "center",
   gap: "0.35rem",
   fontSize: "0.78rem",
-  color: "#475569",
+  color: colors.textSoft,
 };
 
 const swatchStyle = { display: "inline-block", width: "14px", height: "10px", borderRadius: "2px" };
 
-const axisTextStyle = { fontSize: "11px", fill: "#94a3b8" };
+const axisTextStyle = { fontSize: "11px", fill: colors.textFaint };
 
-const axisNoteStyle = { fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.4rem" };
+const axisNoteStyle = { fontSize: "0.75rem", color: colors.textFaint, marginTop: "0.4rem" };
 
-const emptyStyle = { fontSize: "0.88rem", color: "#64748b", padding: "1.5rem 0" };
+const emptyStyle = { fontSize: "0.88rem", color: colors.textSoft, padding: "1.5rem 0" };
