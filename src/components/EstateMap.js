@@ -715,11 +715,27 @@ function applyPendingFocus(pendingRef, map, source) {
 
 function describePin(props) {
   const parts = [];
-  if (props.main_pyeong && props.main_avg_amount) {
-    parts.push(`${props.main_pyeong}평 ${formatManwon(props.main_avg_amount)}`);
+  // **매매가 없는 단지**(전국 3,053개 · 2026-11-24 부터 핀에 올라온다)는 전월세 금액을 적고
+  // "매매 거래 없음"을 분명히 밝힌다 — 안 적으면 보증금을 매매가로 읽는다.
+  if (props.trade_available === false) {
+    const deposit = Number(props.main_deposit);
+    const monthly = Number(props.main_monthly_rent);
+    if (props.main_pyeong && (deposit > 0 || monthly > 0)) {
+      parts.push(
+        monthly > 0
+          ? `${props.main_pyeong}평 월세 ${formatManwon(deposit)}/${formatCount(Math.round(monthly))}만`
+          : `${props.main_pyeong}평 전세 ${formatManwon(deposit)}`
+      );
+    }
+    if (props.rent_count) parts.push(`전월세 ${formatCount(props.rent_count)}건`);
+    parts.push("매매 거래 없음");
+  } else {
+    if (props.main_pyeong && props.main_avg_amount) {
+      parts.push(`${props.main_pyeong}평 ${formatManwon(props.main_avg_amount)}`);
+    }
+    if (props.avg_amount) parts.push(`평균 ${formatManwon(props.avg_amount)}`);
+    if (props.deal_count) parts.push(`${formatCount(props.deal_count)}건`);
   }
-  if (props.avg_amount) parts.push(`평균 ${formatManwon(props.avg_amount)}`);
-  if (props.deal_count) parts.push(`${formatCount(props.deal_count)}건`);
   if (props.area_min) {
     parts.push(
       props.area_max && props.area_max !== props.area_min
@@ -797,13 +813,31 @@ function boundaryStyle(feature) {
  */
 function pinLabel(feature) {
   const pyeong = Number(feature.get("main_pyeong"));
+  const pyeongText = Number.isFinite(pyeong) && pyeong > 0 ? `${pyeong}평` : "";
+
+  // **매매가 없는 단지는 전월세 금액을 적는다**(2026-11-24). 윗줄에 "전세"/"월세"를 함께 적고
+  // 말풍선 색도 달리한다(`rent: true`) — 같은 모양·같은 색에 숫자만 다르면 매매가로 읽힌다.
+  if (feature.get("trade_available") === false) {
+    const deposit = Number(feature.get("main_deposit"));
+    const monthly = Number(feature.get("main_monthly_rent"));
+    if (deposit > 0 || monthly > 0) {
+      const jeonse = !(monthly > 0);
+      return {
+        // 월세는 "보증금/월세"로 붙여 적는다 — 보증금만 적으면 월세 단지가 싸 보인다
+        top: [pyeongText, jeonse ? "전세" : "월세"].filter(Boolean).join(" "),
+        main: jeonse
+          ? formatManwonShort(deposit)
+          : `${deposit > 0 ? formatManwonShort(deposit) : "0"}/${Math.round(monthly).toLocaleString()}`,
+        rent: true,
+      };
+    }
+    return { top: "", main: feature.get("apt_nm") || "", rent: true };
+  }
+
   const amount = Number(feature.get("main_avg_amount")) || Number(feature.get("avg_amount"));
   const price = amount > 0 ? formatManwonShort(amount) : "";
   if (price) {
-    return {
-      top: Number.isFinite(pyeong) && pyeong > 0 ? `${pyeong}평` : "",
-      main: price,
-    };
+    return { top: pyeongText, main: price };
   }
   return { top: "", main: feature.get("apt_nm") || "" };
 }
@@ -853,7 +887,10 @@ function buildingGlyph(cx, cy, fg, bg) {
 const markerCache = new Map();
 
 function markerIcon(label, selected) {
-  const key = `${selected ? "S" : "N"}|${label.top}|${label.main}`;
+  // 전월세만 있는 단지는 같은 모양에 **색만 청록**으로 둔다(2026-11-24) — 모양까지 바꾸면
+  // "다른 종류의 지점"으로 보이고, 색이 같으면 보증금을 매매가로 읽는다.
+  const rent = Boolean(label.rent);
+  const key = `${selected ? "S" : rent ? "R" : "N"}|${label.top}|${label.main}`;
   const cached = markerCache.get(key);
   if (cached) return cached;
 
@@ -870,10 +907,10 @@ function markerIcon(label, selected) {
   const width = textX + textWidth + 11;
   const height = bodyHeight + tailHeight;
   const body = selected ? "#1d4ed8" : "#ffffff";
-  const border = selected ? "#1e3a8a" : "#c7d2e0";
+  const border = selected ? "#1e3a8a" : rent ? "#99f6e4" : "#c7d2e0";
   const textColor = selected ? "#ffffff" : "#0f172a";
-  const topColor = selected ? "rgba(255,255,255,0.88)" : "#64748b";
-  const badge = selected ? "#ffffff" : "#2563eb";
+  const topColor = selected ? "rgba(255,255,255,0.88)" : rent ? "#0f766e" : "#64748b";
+  const badge = selected ? "#ffffff" : rent ? "#0d9488" : "#2563eb";
   const glyph = selected ? "#1d4ed8" : "#ffffff";
   const cx = width / 2;
   const cy = bodyHeight / 2;
