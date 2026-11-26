@@ -263,7 +263,7 @@ const metricsStyle = {
 
 const metricCardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "12px",
   padding: "1rem 1.1rem",
   boxShadow: colors.shadowSoft,
@@ -275,7 +275,7 @@ const metricDescStyle = { marginTop: "0.3rem", fontSize: "0.78rem", color: color
 
 const cardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "14px",
   padding: "1.4rem 1.5rem",
   boxShadow: colors.shadowSoft,
@@ -303,7 +303,7 @@ const featureGridStyle = {
 
 const featureCardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   padding: "0.9rem 1rem",
 };
@@ -318,7 +318,7 @@ const techGridStyle = {
 };
 
 const techCardStyle = {
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   padding: "0.8rem 0.9rem",
   background: colors.raised,

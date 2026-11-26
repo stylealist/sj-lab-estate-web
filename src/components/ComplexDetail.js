@@ -54,6 +54,7 @@ function ComplexDetail({
   areaM2,
   onClose,
   memberReady,
+  targetReady,
   onMemberChanged,
 }) {
   const [detail, setDetail] = useState(null);
@@ -194,26 +195,36 @@ function ComplexDetail({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          style={closeStyle}
-          onClick={onClose}
-          title="닫고 단지 목록으로"
-          aria-label="닫고 단지 목록으로"
-        >
-          ✕
-        </button>
+        {/*
+          제목 줄 오른쪽 = 관심 담기 · 메모 · 닫기(2026-11-25 사용자 요청으로 올라왔다).
+          종전에는 머리말 **아래** 별도의 줄이라 좌우 여백이 어긋나 밀려 나온 것처럼 보였고,
+          조용한 회색 단추라 있는 줄도 모르고 지나쳤다. 상세에서 가장 먼저 보는 자리에 둔다.
+        */}
+        <div style={headActionsStyle}>
+          <FavoriteBar
+            propertyType={propertyType}
+            aptSeq={aptSeq}
+            umdNm={(detail && detail.umd_nm) || umdNm}
+            aptNm={(detail && detail.apt_nm) || aptNm}
+            memberReady={memberReady}
+            /* 목표가는 **평형 단위**라야 뜻이 있다(24평과 34평이 한 단지에 있다) — 그래서
+               이 단지의 평형 목록과 지금 고른 평형을 함께 넘긴다. */
+            targetReady={targetReady}
+            areas={areas}
+            defaultPyeong={pyeong}
+            onChanged={onMemberChanged}
+          />
+          <button
+            type="button"
+            style={closeStyle}
+            onClick={onClose}
+            title="닫고 단지 목록으로"
+            aria-label="닫고 단지 목록으로"
+          >
+            ✕
+          </button>
+        </div>
       </div>
-
-      {/* 관심 담기 · 내 메모 (로그인했고 회원 표가 준비된 경우에만 그려진다) */}
-      <FavoriteBar
-        propertyType={propertyType}
-        aptSeq={aptSeq}
-        umdNm={(detail && detail.umd_nm) || umdNm}
-        aptNm={(detail && detail.apt_nm) || aptNm}
-        memberReady={memberReady}
-        onChanged={onMemberChanged}
-      />
 
       {error ? (
         <p style={errorStyle}>{error}</p>
@@ -550,7 +561,7 @@ const headStyle = {
   justifyContent: "space-between",
   gap: "0.6rem",
   padding: "0.7rem 0.85rem 0.6rem",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
   background: colors.raised,
 };
 
@@ -583,8 +594,16 @@ const areaStyle = {
   display: "inline-block",
 };
 
+// 관심·메모·닫기가 제목 줄 오른쪽에 함께 선다. 제목이 길어져도(ellipsis) 이쪽은 줄지 않는다.
+const headActionsStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.3rem",
+  flexShrink: 0,
+};
+
 const closeStyle = {
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   background: colors.raised,
   borderRadius: "8px",
   width: "26px",
@@ -607,7 +626,7 @@ const chipRowStyle = { display: "flex", flexWrap: "wrap", gap: "0.35rem" };
 
 // 칩이 작아 누르기도 읽기도 어려웠다(2026-10-28 가독성 지적) — 글씨와 여백을 올렸다
 const chipStyle = {
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "999px",
   padding: "0.3rem 0.75rem",
   fontSize: "0.85rem",
@@ -629,7 +648,7 @@ const modeRowStyle = {
 };
 
 const modeStyle = {
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "8px",
   padding: "0.35rem 0.9rem",
   fontSize: "0.875rem",
@@ -641,7 +660,7 @@ const modeStyle = {
 const modeActiveStyle = { ...modeStyle, background: colors.accentSolid, borderColor: colors.accentSolid, color: "#ffffff", fontWeight: 600 };
 
 const periodStyle = {
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "8px",
   padding: "0.35rem 0.7rem",
   fontSize: "0.82rem",
@@ -654,7 +673,7 @@ const headlineStyle = {
   marginTop: "0.7rem",
   padding: "0.75rem 0.9rem",
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   display: "flex",
   flexDirection: "column",
@@ -741,7 +760,7 @@ const tableStyle = {
 const thStyle = {
   textAlign: "left",
   padding: "0.4rem 0.4rem",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
   color: colors.textSoft,
   fontWeight: 600,
   fontSize: "0.78rem",
@@ -752,7 +771,7 @@ const thNumStyle = { ...thStyle, textAlign: "right" };
 
 const tdStyle = {
   padding: "0.45rem 0.4rem",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
   color: colors.text,
   lineHeight: 1.45,
   whiteSpace: "nowrap",
@@ -776,7 +795,7 @@ const scrollBoxStyle = {
   maxHeight: "19rem",
   overflowY: "auto",
   overflowX: "hidden",
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   background: colors.raised,
   overscrollBehavior: "contain",
@@ -807,7 +826,7 @@ const stickyThNumStyle = { ...stickyThStyle, textAlign: "right" };
 const footNoteStyle = {
   margin: "1rem 0 0",
   paddingTop: "0.7rem",
-  borderTop: `${colors.line}`,
+  borderTop: `1px dashed ${colors.line}`,
   fontSize: "0.78rem",
   lineHeight: 1.65,
   color: colors.textSoft,

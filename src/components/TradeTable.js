@@ -80,13 +80,13 @@ const thStyle = {
   fontWeight: 500,
   fontSize: "0.74rem",
   padding: "0.45rem 0.6rem",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
   whiteSpace: "nowrap",
 };
 
 const tdStyle = {
   padding: "0.55rem 0.6rem",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
   color: colors.textSoft,
   verticalAlign: "top",
   lineHeight: 1.45,

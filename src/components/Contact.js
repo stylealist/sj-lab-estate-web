@@ -215,7 +215,7 @@ const heroLinkStyle = {
 
 const leadCardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "14px",
   padding: "1.3rem 1.5rem",
   display: "flex",
@@ -251,7 +251,7 @@ const leadPositionStyle = { marginTop: "0.2rem", fontSize: "0.85rem", color: col
 const leadQuoteStyle = {
   margin: "0.7rem 0 0",
   padding: "0.6rem 0.9rem",
-  borderLeft: `${colors.line}`,
+  borderLeft: `3px solid ${colors.accentSolid}`,
   background: colors.raised,
   fontSize: "0.85rem",
   lineHeight: 1.7,
@@ -266,7 +266,7 @@ const channelGridStyle = {
 
 const channelCardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "14px",
   padding: "1.2rem 1.3rem",
   boxShadow: colors.shadowSoft,
@@ -282,7 +282,7 @@ const linkNoteStyle = { fontSize: "0.76rem", color: colors.textFaint };
 
 const tipsCardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "14px",
   padding: "1.2rem 1.3rem",
 };
@@ -293,6 +293,6 @@ const tipsGridStyle = {
   gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
   gap: "0.8rem",
 };
-const tipItemStyle = { background: colors.raised, border: `${colors.line}`, borderRadius: "10px", padding: "0.85rem 1rem" };
+const tipItemStyle = { background: colors.raised, border: `1px solid ${colors.line}`, borderRadius: "10px", padding: "0.85rem 1rem" };
 const tipHeadStyle = { margin: 0, fontSize: "0.86rem", fontWeight: 700, color: colors.text };
 const tipBodyStyle = { margin: "0.3rem 0 0", fontSize: "0.82rem", lineHeight: 1.65, color: colors.textSoft };

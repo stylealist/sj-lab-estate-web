@@ -8,6 +8,7 @@ import XYZ from "ol/source/XYZ";
 import GeoJSON from "ol/format/GeoJSON";
 import { Fill, Icon, Stroke, Style, Text } from "ol/style";
 import { fromLonLat } from "ol/proj";
+import { defaults as defaultControls } from "ol/control/defaults";
 import {
   fetchComplexBoundary,
   fetchMapComplexes,
@@ -124,6 +125,7 @@ function EstateMap({
   onBoundaryArea,
   pinFilter,
   onPinCount,
+  memberMarks,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -146,6 +148,35 @@ function EstateMap({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hovered, setHovered] = useState(null);
+  /*
+    **핀 옆에 붙는 메모 쪽지**(2026-11-25 사용자 지적: "지도에서 메모를 볼 수는 없는 거야?").
+
+    처음에는 오른쪽 아래 설명 상자에 메모를 이어 붙였는데, 그 상자는 **지도 구석에 고정**이라
+    왼쪽 핀을 가리키면 반대편 구석에 떠서 **있는 줄도 몰랐다.** 메모는 "이 핀의 것" 이므로
+    핀 옆에 붙어야 한다.
+
+    자리는 **마우스가 아니라 핀의 좌표**로 잡는다 — 커서를 따라다니면 글자가 흔들려 읽기 어렵다.
+  */
+  const [notePeek, setNotePeek] = useState(null);
+
+  /*
+    배경지도 고르기(2026-11-25 사용자 요청). 지도를 다시 만들지 않고 **레이어 보이기만** 바꾸므로
+    고르는 순간 바로 바뀐다. 기본은 일반 지도다 — 위성은 글자가 묻히고 지형은 국외 서버라 느리다.
+    `ref` 를 함께 두는 것은 지도를 만드는 효과(한 번만 도는)가 **그때의 선택**을 읽어야 하기 때문이다.
+  */
+  const [baseMap, setBaseMap] = useState("common");
+  const baseMapRef = useRef(baseMap);
+  baseMapRef.current = baseMap;
+  const baseLayersRef = useRef(null);
+
+  /*
+    단계 알림(2026-11-25). **바뀐 순간에만** 띄우고 스스로 사라진다.
+    `levelShownRef` 가 직전에 띄운 문구를 들고 있어, 지도를 조금씩 움직여 같은 단계가 다시
+    계산돼도 다시 뜨지 않는다 — 지도를 끌 때마다 깜빡이면 그게 더 거슬린다.
+  */
+  const [levelToast, setLevelToast] = useState(null);
+  const [levelToastIn, setLevelToastIn] = useState(false);
+  const levelShownRef = useRef("");
   const [pinInfo, setPinInfo] = useState(null);
   // "핀 준비 안 됨" 응답을 받았을 때 **스스로 다시 물어보기 위한** 횟수 세기.
   // 서버가 잠깐 끊겼다 돌아오는 동안(재기동·DB 연결 끊김) 한 번 받은 "준비 중"을 계속 들고 있으면
@@ -164,6 +195,10 @@ function EstateMap({
   const filterRef = useRef(pinFilter);
   filterRef.current = pinFilter;
   const thisYearRef = useRef(new Date().getFullYear());
+  // 내가 담은 단지·메모(2026-11-25). 핀 모양을 정할 때만 읽으므로 ref 로 둔다 — state 로 두면
+  // 바뀔 때마다 지도 전체가 다시 만들어진다. 값이 바뀌면 아래 효과가 핀만 다시 그리게 한다.
+  const marksRef = useRef(memberMarks);
+  marksRef.current = memberMarks;
   // 핀이 새로 도착한 시각. 거르개 개수를 다시 세는 신호로만 쓴다.
   const [pinLoadedAt, setPinLoadedAt] = useState(0);
   const onSelectComplexRef = useRef(onSelectComplex);
@@ -219,7 +254,14 @@ function EstateMap({
     });
     const pinLayer = new VectorLayer({
       source: pinSourceRef.current,
-      style: (feature) => pinStyle(feature, selectedRef.current, filterRef.current, thisYearRef.current),
+      style: (feature) =>
+        pinStyle(
+          feature,
+          selectedRef.current,
+          filterRef.current,
+          thisYearRef.current,
+          marksRef.current
+        ),
       declutter: true,
       zIndex: 10,
     });
@@ -227,18 +269,19 @@ function EstateMap({
       sido: sidoLayer, sgg: sggLayer, emd: emdLayer, pin: pinLayer, boundary: boundaryLayer,
     };
 
+    // 배경지도 세 가지(2026-11-25 사용자 요청). 한 번 만들어 두고 **보이기만 바꾼다** —
+    // 고를 때마다 레이어를 지웠다 만들면 타일을 처음부터 다시 받아 깜빡인다.
+    const baseTileLayers = buildBaseLayers();
+    baseLayersRef.current = baseTileLayers;
+    applyBaseMap(baseTileLayers, baseMapRef.current);
+
     const map = new Map({
       target: containerRef.current,
       layers: [
-        new TileLayer({
-          source: new XYZ({
-            // 지도 서비스(sj-lab-mapservice)와 같은 배경 타일
-            url: "https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png",
-            crossOrigin: "anonymous",
-            attributions: "VWorld",
-            maxZoom: 19,
-          }),
-        }),
+        baseTileLayers.common,
+        baseTileLayers.satellite,
+        baseTileLayers.terrain,
+        baseTileLayers.hybrid,
         sidoLayer,
         sggLayer,
         emdLayer,
@@ -247,6 +290,15 @@ function EstateMap({
       ],
       // 기본 위치는 화면 기본 지역(서울 강남구)에 맞춘다
       view: new View({ center: fromLonLat([127.047, 37.5172]), zoom: 13, minZoom: 6, maxZoom: 18 }),
+      /*
+        기본 단추 중 **회전 되돌리기(ol-rotate)는 뺀다**(2026-11-25 사용자 지적).
+        이 지도는 회전시킬 수단이 없어 그 단추는 언제나 아무 일도 하지 않는데, 왼쪽 패널을
+        접으면 왼쪽 위에 혼자 덩그러니 보였다. OpenLayers 는 회전이 0 일 때 이 단추를
+        `ol-hidden` 으로 숨기지만, 이 저장소는 `ol.css` 를 들이지 않고 필요한 규칙만 옮겨
+        적으므로(아래 OL_BASE_CSS) 그 숨김 규칙이 없다. 숨기는 규칙을 더하는 대신 단추 자체를
+        만들지 않는다 — 쓰지 않는 것을 그려 두고 가릴 이유가 없다.
+      */
+      controls: defaultControls({ rotate: false }),
     });
 
     const syncView = () => {
@@ -275,11 +327,23 @@ function EstateMap({
 
     map.on("moveend", syncView);
 
+    // 지도를 움직이면 쪽지를 치운다 — 마우스가 그대로면 `pointermove` 가 오지 않아
+    // 쪽지가 **옛 자리에 그대로 남는다**(핀은 떠나고 쪽지만 남아 엉뚱한 단지를 가리킨다)
+    map.on("movestart", () => setNotePeek(null));
+
     map.on("pointermove", (event) => {
       if (event.dragging) return;
       const feature = map.forEachFeatureAtPixel(event.pixel, (f) => f, { hitTolerance: 3 });
       setHovered(feature ? feature.getProperties() : null);
       map.getTargetElement().style.cursor = feature ? "pointer" : "";
+      setNotePeek(peekFor(map, feature, marksRef.current));
+    });
+
+    // 지도 밖으로 나가면 떠 있던 설명·메모를 치운다 — `pointermove` 는 밖에서는 오지 않아
+    // 마지막 핀의 메모가 그대로 붙어 있었다
+    map.getViewport().addEventListener("pointerleave", () => {
+      setHovered(null);
+      setNotePeek(null);
     });
 
     map.on("singleclick", (event) => {
@@ -490,6 +554,16 @@ function EstateMap({
     pinSourceRef.current.changed();
   }, [selectedAptSeq]);
 
+  // 관심·메모가 바뀌면(담기·빼기·메모 저장) 그 단지 말풍선의 표시가 바로 따라 바뀐다
+  useEffect(() => {
+    pinSourceRef.current.changed();
+  }, [memberMarks]);
+
+  // 배경지도를 고르면 레이어 보이기만 바꾼다
+  useEffect(() => {
+    applyBaseMap(baseLayersRef.current, baseMap);
+  }, [baseMap]);
+
   /**
    * 거르개가 바뀌면 다시 그리고 <b>몇 개 중 몇 개가 남았는지</b>를 화면에 알린다.
    *
@@ -649,17 +723,76 @@ function EstateMap({
   }, []);
 
   const levelLabel = level === "sido" ? "시 · 도" : level === "sgg" ? "시 · 군 · 구" : "읍 · 면 · 동";
+  const levelText = zoom < PIN_ZOOM ? `${levelLabel} 범위` : "아파트 보기";
+
+  /*
+    단계가 **바뀐 순간**에만 위 가운데로 띄우고 스스로 사라진다.
+
+    한 박자 뒤(`requestAnimationFrame`)에 보이게 하는 것은, 그려 넣자마자 보이게 하면
+    브라우저가 처음 상태를 그리지 않아 **스르르 나타나는 전환이 통째로 생략**되기 때문이다
+    (아래 핀 토스트와 같은 방법).
+  */
+  useEffect(() => {
+    if (levelText === levelShownRef.current) return undefined;
+    levelShownRef.current = levelText;
+    setLevelToast(levelText);
+    const raf = requestAnimationFrame(() => setLevelToastIn(true));
+    const fadeOut = setTimeout(() => setLevelToastIn(false), LEVEL_TOAST_MS);
+    const remove = setTimeout(() => setLevelToast(null), LEVEL_TOAST_MS + 320);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(fadeOut);
+      clearTimeout(remove);
+    };
+  }, [levelText]);
 
   return (
     <div style={wrapStyle}>
       <div ref={containerRef} style={mapStyle} />
 
-      {/* 지금 보고 있는 단계 — 줌으로 바뀌므로 눈에 보이게 적어 둔다 */}
-      {/* 지금 어느 단계를 보고 있나 — 경계를 그리지 않으므로 지역 이름 대신 단계만 적는다.
-          패널의 조건이 이 단계에 따라 움직이므로 그 사실은 계속 보여 준다. */}
-      <div style={levelBadgeStyle}>
-        {zoom < PIN_ZOOM ? `${levelLabel} 범위` : "아파트 보기"}
-        {loading ? " · 불러오는 중…" : ""}
+      {/*
+        지금 보고 있는 단계 — **바뀔 때만 위 가운데에서 잠깐** 알린다(2026-11-25 사용자 요청).
+
+        종전에는 오른쪽 위에 **늘 붙어 있었다.** 단계는 줌을 바꾼 **그 순간에만** 궁금한
+        정보인데 자리를 계속 차지했고, 그 자리는 지금 배경지도 고르기가 쓴다.
+      */}
+      {levelToast && (
+        <div
+          style={levelToastIn ? levelToastShownStyle : levelToastHiddenStyle}
+          role="status"
+          aria-live="polite"
+        >
+          {levelToast}
+        </div>
+      )}
+
+      {/*
+        배경지도 고르기 — 오른쪽 위(2026-11-25 사용자 요청). 미리보기는 **진짜 타일**이라
+        누르기 전에 어떤 그림인지 그대로 보인다.
+      */}
+      <div style={baseSwitchStyle} role="group" aria-label="배경지도 고르기">
+        {BASE_MAPS.map((item) => {
+          const on = baseMap === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              style={on ? baseItemOnStyle : baseItemStyle}
+              onClick={() => setBaseMap(item.id)}
+              aria-pressed={on}
+              title={
+                item.id === "satellite"
+                  ? "위성 영상 + 지명·경계(하이브리드)"
+                  : item.id === "terrain"
+                    ? "등고선·음영 지형도(OpenTopoMap)"
+                    : "일반 지도"
+              }
+            >
+              <img src={item.thumb} alt="" style={baseThumbStyle} loading="lazy" draggable={false} />
+              <span style={on ? baseLabelOnStyle : baseLabelStyle}>{item.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {error && <div style={errorBadgeStyle}>{error}</div>}
@@ -711,6 +844,29 @@ function EstateMap({
                 ? `${formatCount(hovered.deal_count)}건 · 평균 ${formatManwon(hovered.avg_amount)}`
                 : "이 기간 거래 없음"}
           </span>
+
+          {/*
+            **메모를 지도에서 바로 읽는다**(2026-11-25 사용자 요청). 종전에는 메모가 있다는
+            사실만 알 수 있고 내용을 보려면 단지를 열어야 했다 — 지도를 훑으며 "여기 뭐라고
+            적었더라" 를 확인할 수가 없었다. 이미 떠 있는 설명 상자에 이어 붙이면 새 창을
+            띄우지 않아도 된다(핀을 가리지도 않는다).
+            서버에 다시 묻지 않는다 — 메모 본문은 화면이 이미 들고 있다(App 의 `memberMarks`).
+          */}
+          {hovered.apt_seq && memberMarks && memberMarks.favorites[hovered.apt_seq] && (
+            <span style={tooltipFavStyle}>★ 관심 단지</span>
+          )}
+        </div>
+      )}
+
+      {/* 메모 쪽지 — 핀 옆에 붙는다. 마우스를 막지 않도록 `pointerEvents: none` 이다
+          (막으면 쪽지 위에서 hover 가 끊겨 쪽지가 깜빡인다). */}
+      {notePeek && (
+        <div style={notePeekStyle(notePeek)}>
+          <span style={notePeekHeadStyle}>
+            {notePeek.favorite && <span style={notePeekStarStyle}>★</span>}
+            {notePeek.aptNm}
+          </span>
+          <span style={notePeekBodyStyle}>{notePeek.note}</span>
         </div>
       )}
 
@@ -901,6 +1057,182 @@ function escapeXml(text) {
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * 말풍선 오른쪽 끝에 붙는 <b>내 표시</b>(2026-11-25 사용자 요청: "관심·메모 남긴 단지를 지도에서도").
+ *
+ * <p><b>왜 글자 옆인가.</b> 모서리에 띄우면 말풍선 밖으로 나가 잘리거나 옆 말풍선과 겹친다.
+ * 글자 뒤에 칸을 만들어 넣으면 말풍선이 그만큼만 넓어지고 겹침·잘림이 생기지 않는다.
+ *
+ * <p>별은 글리프(★)를 쓰고 메모는 <b>그려서</b> 쓴다 — ✎ 같은 기호는 없는 글꼴이 많아
+ * 두부(□)로 보일 수 있다. 별(U+2605)은 어느 글꼴에나 있다.
+ */
+function noteGlyph(cx, cy, color, lineColor) {
+  const x = cx - 4;
+  const y = cy - 5;
+  return (
+    `<rect x="${x}" y="${y}" width="8" height="10" rx="1.4" fill="${color}"/>` +
+    `<rect x="${x + 1.8}" y="${y + 2.2}" width="4.4" height="1.1" fill="${lineColor}"/>` +
+    `<rect x="${x + 1.8}" y="${y + 4.4}" width="4.4" height="1.1" fill="${lineColor}"/>` +
+    `<rect x="${x + 1.8}" y="${y + 6.6}" width="2.6" height="1.1" fill="${lineColor}"/>`
+  );
+}
+
+/** 쪽지 폭(px). 자리를 계산할 때와 그릴 때가 같아야 해서 한 곳에 둔다. */
+const NOTE_PEEK_WIDTH = 236;
+
+/**
+ * 고를 수 있는 배경지도(2026-11-25 사용자 요청).
+ *
+ * <p><b>미리보기는 그림 파일이 아니라 진짜 타일이다</b> — 같은 자리(서울 도심, z12)를 서비스마다
+ * 한 장씩 받아 보여 준다. 그림을 따로 그려 넣으면 실제 지도와 달라지고(색을 바꾸면 또 어긋난다),
+ * 이 저장소는 이미지 파일을 들이지 않는 구성이다.
+ *
+ * <p><b>지형은 VWorld 가 주지 않는다.</b> `2d/terrain` 은 404 이고 2D 서비스에는 Base · Satellite ·
+ * Hybrid · midnight 뿐이다(2026-11-25 직접 확인). 그래서 지형만 <b>OpenTopoMap</b>(등고선 + 음영,
+ * 키가 필요 없고 CC-BY-SA)을 쓴다. 최대 배율이 17 이라 18 에서는 17 타일을 늘려 보여 준다
+ * (OpenLayers 가 `maxZoom` 을 넘는 배율에서 가장 가까운 타일을 끌어다 쓴다).
+ * <b>국내 서버가 아니라 조금 느리다</b> — 기본값으로 두지 말 것.
+ *
+ * <p>위성은 <b>하이브리드(지명·경계)를 함께 켠다</b> — 위성만 보면 어디가 어디인지 알 수 없다.
+ */
+const BASE_MAPS = [
+  {
+    id: "common",
+    label: "일반",
+    thumb: "https://xdworld.vworld.kr/2d/Base/service/12/3492/1586.png",
+  },
+  {
+    id: "satellite",
+    label: "위성",
+    thumb: "https://xdworld.vworld.kr/2d/Satellite/service/12/3492/1586.jpeg",
+  },
+  {
+    id: "terrain",
+    label: "지형",
+    thumb: "https://tile.opentopomap.org/12/3492/1586.png",
+  },
+];
+
+function buildBaseLayers() {
+  return {
+    common: new TileLayer({
+      source: new XYZ({
+        // 지도 서비스(sj-lab-mapservice)와 같은 배경 타일
+        url: "https://xdworld.vworld.kr/2d/Base/service/{z}/{x}/{y}.png",
+        crossOrigin: "anonymous",
+        attributions: "VWorld",
+        maxZoom: 19,
+      }),
+    }),
+    satellite: new TileLayer({
+      source: new XYZ({
+        url: "https://xdworld.vworld.kr/2d/Satellite/service/{z}/{x}/{y}.jpeg",
+        crossOrigin: "anonymous",
+        attributions: "VWorld",
+        maxZoom: 19,
+      }),
+    }),
+    // 위성 위에 얹는 지명·경계. 배경이 아니라 **덧칠**이라 위성일 때만 함께 켠다.
+    hybrid: new TileLayer({
+      source: new XYZ({
+        url: "https://xdworld.vworld.kr/2d/Hybrid/service/{z}/{x}/{y}.png",
+        crossOrigin: "anonymous",
+        maxZoom: 19,
+      }),
+    }),
+    terrain: new TileLayer({
+      source: new XYZ({
+        url: "https://tile.opentopomap.org/{z}/{x}/{y}.png",
+        crossOrigin: "anonymous",
+        attributions: "OpenTopoMap (CC-BY-SA) · OpenStreetMap",
+        maxZoom: 17,
+      }),
+    }),
+  };
+}
+
+/** 고른 배경지도만 켠다. 위성이면 하이브리드를 함께 켠다. */
+function applyBaseMap(layers, id) {
+  if (!layers) return;
+  layers.common.setVisible(id === "common");
+  layers.satellite.setVisible(id === "satellite");
+  layers.hybrid.setVisible(id === "satellite");
+  layers.terrain.setVisible(id === "terrain");
+}
+
+/**
+ * 말풍선이 좌표 위로 솟은 높이(px)와 쪽지가 차지할 수 있는 최대 높이.
+ *
+ * <p>말풍선은 꼬리 끝이 단지 좌표를 가리키므로(`anchor: [0.5, 1]`) <b>좌표에서 위쪽으로</b>
+ * 두 줄짜리 45px 까지 올라간다. 쪽지를 그보다 위(또는 좌표 아래)에 두어야 핀을 덮지 않는다.
+ * 쪽지 높이는 머리말 + 본문 6줄 + 여백이 최대치다.
+ */
+const MARKER_RISE = 46;
+const NOTE_PEEK_MAX_HEIGHT = 150;
+
+/**
+ * 가리키고 있는 핀에 메모가 있으면 <b>그 핀 위에 띄울 쪽지</b>의 내용과 자리를 만든다.
+ *
+ * <p><b>핀을 덮지 않는 것이 첫째다</b>(2026-11-25 사용자 지적). 처음에는 핀 오른쪽
+ * (`+14px`)에 두었는데 말풍선 폭이 84~101px 이라 <b>그 안에 들어가</b> 가격을 가렸다.
+ * 말풍선은 좌표를 중심으로 좌우로 벌어지고 위로 솟으므로, 옆에 두려면 폭을 알아야 하지만
+ * 폭은 글자 수에 따라 달라진다 — 그래서 <b>위아래</b>로 비킨다. 위쪽은 말풍선이 솟은 만큼
+ * (46px) 더 올리고, 자리가 없으면 좌표 <b>아래</b>로 내린다(아래는 늘 비어 있다).
+ *
+ * <p>좌우는 핀을 가운데 두고 양끝에서만 민다 — 쪽지가 지도 밖으로 잘리면 글자가 사라진다.
+ *
+ * @returns 쪽지 정보 또는 null(메모가 없거나 핀이 아니면)
+ */
+function peekFor(map, feature, marks) {
+  if (!feature || !marks) return null;
+  const aptSeq = feature.get("apt_seq");
+  if (!aptSeq) return null;
+  const note = marks.notes[aptSeq];
+  if (!note) return null;
+  const geometry = feature.getGeometry();
+  const size = map.getSize();
+  if (!geometry || !size) return null;
+  const pixel = map.getPixelFromCoordinate(geometry.getCoordinates());
+  if (!pixel) return null;
+
+  // 위에 쪽지가 통째로 들어갈 자리가 없으면 아래로 내린다
+  const below = pixel[1] - MARKER_RISE - 10 - NOTE_PEEK_MAX_HEIGHT < 0;
+  const half = NOTE_PEEK_WIDTH / 2;
+  const left = Math.min(Math.max(pixel[0] - half, 8), Math.max(8, size[0] - NOTE_PEEK_WIDTH - 8));
+  return {
+    aptSeq,
+    aptNm: feature.get("apt_nm") || aptSeq,
+    favorite: Boolean(marks.favorites[aptSeq]),
+    note,
+    left,
+    // 위에 둘 때는 쪽지 **아래 끝**을 말풍선 꼭대기에 맞춘다(아래에서 위로 자란다).
+    // 높이를 모르므로 CSS 에서 translateY(-100%) 로 뒤집는다 — 글자 수가 달라도 안전하다.
+    top: below ? pixel[1] + 10 : pixel[1] - MARKER_RISE - 10,
+    below,
+  };
+}
+
+/**
+ * 관심 단지 배지 안의 별 — <b>글꼴이 아니라 좌표로 그린다.</b>
+ *
+ * <p>★(U+2605) 글자를 쓰면 글꼴마다 크기·중심이 달라 배지 안에서 삐뚤게 앉고, 지도를 이미지로
+ * 굽는 환경(SVG → Icon)에서는 글꼴이 없으면 두부(□)가 된다. 좌표로 그리면 어디서나 같다.
+ */
+function starGlyph(cx, cy, color) {
+  const r = 6.2;
+  const inner = r * 0.42;
+  const points = [];
+  for (let i = 0; i < 10; i += 1) {
+    const radius = i % 2 === 0 ? r : inner;
+    // -90도에서 시작해 별 꼭짓점이 위를 향하게 한다
+    const angle = (Math.PI / 5) * i - Math.PI / 2;
+    points.push(
+      `${(cx + radius * Math.cos(angle)).toFixed(2)},${(cy + radius * Math.sin(angle)).toFixed(2)}`
+    );
+  }
+  return `<polygon points="${points.join(" ")}" fill="${color}"/>`;
+}
+
 /** 말풍선 안의 아파트 글리프(작은 건물 모양). 13px 안에서도 알아볼 수 있게 창문 2개만 둔다. */
 function buildingGlyph(cx, cy, fg, bg) {
   const x = cx - 5;
@@ -926,11 +1258,20 @@ function buildingGlyph(cx, cy, fg, bg) {
  */
 const markerCache = new Map();
 
-function markerIcon(label, selected) {
+function markerIcon(label, selected, mark) {
   // 전월세만 있는 단지는 같은 모양에 **색만 청록**으로 둔다(2026-11-24) — 모양까지 바꾸면
   // "다른 종류의 지점"으로 보이고, 색이 같으면 보증금을 매매가로 읽는다.
   const rent = Boolean(label.rent);
-  const key = `${selected ? "S" : rent ? "R" : "N"}|${label.top}|${label.main}`;
+  const markFav = Boolean(mark && mark.fav);
+  const markNote = Boolean(mark && mark.note);
+  /*
+    **목표가에 닿은 단지**(2026-11-25). 색을 또 하나 늘리지 않고 **오른쪽 위에 빨간 점**을
+    찍는다 — 말풍선 색은 이미 네 가지 뜻을 지고 있어(선택·관심·메모·전월세) 다섯 번째 색은
+    아무 뜻도 못 가진다. 점은 색 체계와 겹치지 않으면서 "알림이 왔다" 로만 읽힌다.
+  */
+  const markHit = Boolean(mark && mark.hit);
+  // **내 표시도 캐시 키에 넣어야 한다** — 넣지 않으면 담은 뒤에도 옛 말풍선이 그대로 쓰인다
+  const key = `${selected ? "S" : rent ? "R" : "N"}${markFav ? "F" : ""}${markNote ? "M" : ""}${markHit ? "H" : ""}|${label.top}|${label.main}`;
   const cached = markerCache.get(key);
   if (cached) return cached;
 
@@ -944,7 +1285,10 @@ function markerIcon(label, selected) {
   const badgeRadius = twoLines ? 11 : 9.5;
   const badgeCx = 5 + badgeRadius;
   const textX = badgeCx + badgeRadius + 5;
-  const width = textX + textWidth + 11;
+  // 메모만 있는 단지에는 글자 뒤에 메모지를 하나 더 붙인다(관심은 아래처럼 **말풍선 전체**로
+  // 보이므로 따로 붙이지 않는다 — 붙이면 같은 말을 두 번 하는 셈이고 말풍선만 넓어진다)
+  const tailMark = markNote && markFav;
+  const width = textX + textWidth + (tailMark ? 17 : 0) + 11;
   const height = bodyHeight + tailHeight;
   // **말풍선도 화면과 같은 딥 네이비다**(2026-11-24 사용자 요청). 종전에는 흰 말풍선이어서
   // 화면 톤을 어둡게 바꾼 뒤 지도만 하얗게 떠 보였다. 밝은 배경 지도 위에서는 어두운 말풍선이
@@ -953,33 +1297,78 @@ function markerIcon(label, selected) {
   // **투명도를 주지 말 것** — 말풍선이 겹칠 때 아래 것이 비쳐 숫자가 두 겹으로 읽힌다.
   // 그래서 `theme.js` 의 반투명 토큰을 쓰지 않고 여기서 **단색**으로 둔다.
   const body = selected ? "#1d4ed8" : colors.markerBody;
-  const border = selected ? "#93b4f0" : rent ? "#2dd4bf" : colors.markerBorder;
   const textColor = selected ? "#ffffff" : colors.markerText;
   const topColor = selected ? "rgba(255,255,255,0.88)" : rent ? "#5eead4" : colors.markerTop;
-  const badge = selected ? "#ffffff" : rent ? "#2dd4bf" : "#2563eb";
-  // 아이콘(건물)과 창문은 배지 색 위에 올라가므로 **배지와 반대 밝기**여야 보인다
-  const glyph = selected ? "#1d4ed8" : rent ? "#0b1f1c" : "#ffffff";
+
+  /*
+    **내 단지는 말풍선 전체로 보인다**(2026-11-25 사용자 지적: "작아서 보기 힘들다").
+
+    처음에는 글자 뒤에 12px 짜리 별·메모지를 붙였는데, 한 화면에 300개가 뜨는 말풍선 안에서
+    그만한 그림은 **글자의 일부처럼 읽혀** 찾아낼 수가 없었다. 그래서 작은 표시를 키우는 대신
+    **테두리와 왼쪽 배지(색과 그림)를 통째로 바꾼다** — 색이 다른 말풍선은 훑기만 해도 보인다.
+
+      관심        : 노란 테두리(두껍게) + 노란 배지에 ★
+      메모만      : 하늘색 테두리 + 하늘색 배지에 메모지
+      관심 + 메모 : 관심 모양(노랑 ★) + 글자 뒤에 메모지 하나
+
+    고른 단지(selected)는 종전대로 파란 말풍선이다 — "지금 보고 있는 것" 이 먼저다.
+  */
+  const border = selected
+    ? "#93b4f0"
+    : markFav
+      ? "#fbbf24"
+      : markNote
+        ? "#93c5fd"
+        : rent
+          ? "#2dd4bf"
+          : colors.markerBorder;
+  // 내 단지는 테두리를 두껍게 — 색만 바꾸면 1px 선이라 멀리서 티가 나지 않는다
+  const strokeWidth = !selected && (markFav || markNote) ? 2 : 1;
+  const badge = selected
+    ? "#ffffff"
+    : markFav
+      ? "#fbbf24"
+      : markNote
+        ? "#93c5fd"
+        : rent
+          ? "#2dd4bf"
+          : "#2563eb";
+  // 아이콘(건물·별·메모지)은 배지 색 위에 올라가므로 **배지와 반대 밝기**여야 보인다
+  const glyph = selected ? "#1d4ed8" : rent ? "#0b1f1c" : markFav || markNote ? "#1b2f52" : "#ffffff";
   const cx = width / 2;
   const cy = bodyHeight / 2;
   // 두 줄이면 위(평형)·아래(금액)로 나눠 적고, 한 줄이면 가운데에 적는다
   const topBaseline = cy - 2;
   const mainBaseline = twoLines ? cy + 12 : cy + 4.6;
+  // 배지 안의 그림은 **`cy` 가 정해진 뒤에** 만든다 — 위로 올리면 선언 전 접근이라 터진다
+  const badgeGlyph = markFav
+    ? starGlyph(badgeCx, cy, glyph)
+    : markNote
+      ? noteGlyph(badgeCx, cy, glyph, badge)
+      : buildingGlyph(badgeCx, cy, glyph, badge);
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     // 꼬리를 먼저 그리고 몸통을 덮는다 — 몸통이 꼬리의 윗선을 가려 하나로 이어 보인다
     `<polygon points="${cx - 6},${bodyHeight - 3} ${cx + 6},${bodyHeight - 3} ${cx},${height - 0.5}"` +
-    ` fill="${body}" stroke="${border}" stroke-width="1"/>` +
-    `<rect x="0.5" y="0.5" width="${width - 1}" height="${bodyHeight - 1}" rx="${twoLines ? 12 : (bodyHeight - 1) / 2}"` +
-    ` fill="${body}" stroke="${border}" stroke-width="1"/>` +
+    ` fill="${body}" stroke="${border}" stroke-width="${strokeWidth}"/>` +
+    `<rect x="${strokeWidth / 2}" y="${strokeWidth / 2}" width="${width - strokeWidth}"` +
+    ` height="${bodyHeight - strokeWidth}" rx="${twoLines ? 12 : (bodyHeight - strokeWidth) / 2}"` +
+    ` fill="${body}" stroke="${border}" stroke-width="${strokeWidth}"/>` +
     `<circle cx="${badgeCx}" cy="${cy}" r="${badgeRadius}" fill="${badge}"/>` +
-    buildingGlyph(badgeCx, cy, glyph, badge) +
+    badgeGlyph +
     (twoLines
       ? `<text x="${textX}" y="${topBaseline}" font-family="${MARKER_FONT_FAMILY}"` +
         ` font-size="${MARKER_TOP_SIZE}" font-weight="600" fill="${topColor}">${escapeXml(label.top)}</text>`
       : "") +
     `<text x="${textX}" y="${mainBaseline}" font-family="${MARKER_FONT_FAMILY}" font-size="${MARKER_MAIN_SIZE}"` +
     ` font-weight="700" fill="${textColor}">${escapeXml(label.main)}</text>` +
+    (tailMark ? noteGlyph(textX + textWidth + 10, cy, "#93c5fd", body) : "") +
+    // 알림 점 — 말풍선 **밖으로 살짝 걸치게** 둔다(안에 두면 글자와 겹쳐 읽힌다).
+    // 흰 테두리를 둘러 어떤 색 말풍선 위에서도 떨어져 보인다.
+    (markHit
+      ? `<circle cx="${width - 6}" cy="6" r="4.5" fill="#ef4444" stroke="#ffffff" stroke-width="1.5"/>`
+      : "") +
     `</svg>`;
 
   const icon = new Icon({
@@ -996,15 +1385,28 @@ function markerIcon(label, selected) {
  * 핀 하나의 모양. <b>조건에 맞지 않으면 `null` 을 돌려 아예 그리지 않는다</b> — 핀을 지웠다
  * 다시 받으면 지도가 멈칫거리고, 안 그린 핀은 클릭 판정에도 걸리지 않아 이 방법이 안전하다.
  */
-function pinStyle(feature, selectedAptSeq, filter, thisYear) {
+function pinStyle(feature, selectedAptSeq, filter, thisYear, marks) {
   const isSelected = feature.get("apt_seq") === selectedAptSeq;
   // 고른 단지는 조건과 무관하게 남긴다 — 보고 있던 단지가 조건을 켜는 순간 사라지면
   // 왼쪽 상세 패널만 남아 "어디 것인지" 알 수 없다.
   if (!isSelected && !pinMatchesFilter(feature.getProperties(), filter, thisYear)) return null;
+  const aptSeq = feature.get("apt_seq");
+  const mark = marks
+    ? {
+        fav: Boolean(marks.favorites[aptSeq]),
+        note: Boolean(marks.notes[aptSeq]),
+        // 목표가를 정했고 **그 뒤에 닿은 거래가 있는** 단지만 알림 점을 받는다
+        hit: Number(
+          marks.targets && marks.targets[aptSeq] ? marks.targets[aptSeq].target_hit_count : 0
+        ) > 0,
+      }
+    : null;
   return new Style({
-    image: markerIcon(pinLabel(feature), isSelected),
-    // 고른 단지는 다른 말풍선에 밀려 사라지지 않게 위로 올린다
-    zIndex: isSelected ? 20 : 1,
+    image: markerIcon(pinLabel(feature), isSelected, mark),
+    // 고른 단지는 다른 말풍선에 밀려 사라지지 않게 위로 올린다.
+    // **내 단지(관심·메모)도 한 단 올린다**(2026-11-25) — 빽빽한 동네에서 다른 말풍선에
+    // 덮여 버리면 아무리 눈에 띄게 그려도 보이지 않는다.
+    zIndex: isSelected ? 20 : mark && mark.hit ? 15 : mark && (mark.fav || mark.note) ? 10 : 1,
   });
 }
 
@@ -1021,10 +1423,95 @@ const mapStyle = { width: "100%", height: "100%" };
 
 const badgeBaseStyle = { ...pill, position: "absolute" };
 
-// 단계 배지("시군구 범위" · "아파트 보기")는 **오른쪽 위**다(2026-11-24 사용자 요청).
-// 종전에는 왼쪽 위(3.4rem/3.6rem)였는데 **왼쪽 패널에 완전히 가려** 패널을 접지 않으면
-// 보이지 않았다. 왼쪽 위는 검색창·거르개가 쓰고, 그것들만 패널 폭을 따라 움직인다.
-const levelBadgeStyle = { ...badgeBaseStyle, top: "0.75rem", right: "0.75rem" };
+/*
+  단계 알림은 **위 가운데에서 잠깐 떴다 사라진다**(2026-11-25 사용자 요청).
+
+  2026-11-24 에는 오른쪽 위에 **늘 붙어 있었다**(그 전에는 왼쪽 위였는데 패널에 가려 옮겼다).
+  단계는 줌을 바꾼 **그 순간에만** 궁금한 정보라 계속 띄울 값이 아니고, 그 자리는 배경지도
+  고르기가 쓴다. 위 가운데는 검색창(왼쪽)·배경지도(오른쪽) 사이라 비어 있다.
+*/
+const LEVEL_TOAST_MS = 1800;
+
+const levelToastBaseStyle = {
+  ...pill,
+  position: "absolute",
+  top: "0.75rem",
+  left: "50%",
+  background: "rgba(27, 49, 89, 0.96)",
+  color: colors.text,
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+  // 지도를 끌 때 걸리지 않게 — 읽기만 하는 표시다
+  pointerEvents: "none",
+  zIndex: 5,
+  transition: "opacity 0.26s ease, transform 0.26s cubic-bezier(0.4, 0, 0.2, 1)",
+};
+
+const levelToastShownStyle = {
+  ...levelToastBaseStyle,
+  opacity: 1,
+  transform: "translate(-50%, 0)",
+};
+
+const levelToastHiddenStyle = {
+  ...levelToastShownStyle,
+  opacity: 0,
+  transform: "translate(-50%, -0.45rem)",
+};
+
+/*
+  배경지도 고르기 — 종전에 단계 배지가 쓰던 **오른쪽 위**다.
+
+  **미리보기를 그림 파일이 아니라 진짜 타일로** 쓴다(`BASE_MAPS`). 아이콘을 그려 넣으면 실제
+  지도와 달라지고, 이 저장소는 이미지 파일을 들이지 않는 구성이다.
+*/
+const baseSwitchStyle = {
+  position: "absolute",
+  top: "0.75rem",
+  right: "0.75rem",
+  display: "flex",
+  gap: "0.3rem",
+  padding: "0.3rem",
+  borderRadius: "12px",
+  background: colors.surface,
+  border: `1px solid ${colors.line}`,
+  boxShadow: colors.shadowSoft,
+  zIndex: 4,
+};
+
+const baseItemStyle = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "0.18rem",
+  width: "50px",
+  padding: "0.18rem",
+  borderRadius: "9px",
+  border: "1px solid transparent",
+  background: "transparent",
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
+
+const baseItemOnStyle = {
+  ...baseItemStyle,
+  border: `1px solid ${colors.accent}`,
+  background: colors.accentSoft,
+};
+
+const baseThumbStyle = {
+  width: "42px",
+  height: "42px",
+  borderRadius: "7px",
+  objectFit: "cover",
+  display: "block",
+  // 타일을 못 받아도 칸이 무너지지 않게 바탕을 깔아 둔다
+  background: colors.raised,
+};
+
+const baseLabelStyle = { fontSize: "0.68rem", color: colors.textFaint, lineHeight: 1.2 };
+
+const baseLabelOnStyle = { ...baseLabelStyle, color: colors.text, fontWeight: 600 };
 
 const errorBadgeStyle = {
   ...badgeBaseStyle,
@@ -1035,11 +1522,12 @@ const errorBadgeStyle = {
   border: `1px solid ${colors.dangerLine}`,
 };
 
-// 핀 준비 안내는 단계 배지 **아래 줄**로 내렸다(2026-11-24) — 배지가 오른쪽 위로 오면서
-// 같은 자리를 다퉜다. 두 개가 겹치면 안내 문구가 배지에 덮인다.
+// 핀 준비 안내는 오른쪽 위에 있는 것 **아래 줄**이다. 2026-11-24 에는 단계 배지(약 2.2rem)
+// 아래였고, 2026-11-25 에 그 자리를 배경지도 고르기가 넘겨받으며 더 내려왔다
+// (0.75rem + 미리보기 42 + 글자 ~13 + 여백 ~10 = 약 5.3rem). **위 칸의 높이를 바꾸면 같이 고칠 것.**
 const pinNoticeStyle = {
   position: "absolute",
-  top: "3.1rem",
+  top: "5.6rem",
   right: "0.75rem",
   maxWidth: "240px",
   padding: "0.55rem 0.8rem",
@@ -1170,3 +1658,72 @@ const tooltipStyle = {
 };
 
 const tooltipSubStyle = { fontSize: "0.76rem", color: colors.textFaint };
+
+// 말풍선 테두리와 같은 노랑 — 지도에서 본 그 색이 설명에도 있어야 "그 표시" 로 이어진다
+const tooltipFavStyle = {
+  marginTop: "0.3rem",
+  alignSelf: "flex-start",
+  padding: "0.12rem 0.4rem",
+  borderRadius: "999px",
+  background: colors.warnSoft,
+  border: `1px solid ${colors.warnLine}`,
+  color: colors.warn,
+  fontSize: "0.7rem",
+  fontWeight: 600,
+};
+
+/**
+ * 핀 옆 메모 쪽지. 자리는 `peekFor` 가 계산한다.
+ *
+ * <p>색은 <b>메모 표시와 같은 하늘색</b>이다 — 지도에서 본 그 테두리 색이 쪽지에도 있어야
+ * "그 표시의 내용" 으로 이어 읽힌다.
+ */
+const notePeekStyle = (peek) => ({
+  position: "absolute",
+  left: `${peek.left}px`,
+  top: `${peek.top}px`,
+  // 위에 둘 때는 아래 끝을 기준으로 위로 자란다 — 쪽지 높이를 몰라도 핀을 덮지 않는다
+  transform: peek.below ? undefined : "translateY(-100%)",
+  width: `${NOTE_PEEK_WIDTH}px`,
+  maxHeight: `${NOTE_PEEK_MAX_HEIGHT}px`,
+  boxSizing: "border-box",
+  zIndex: 6,
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.25rem",
+  padding: "0.5rem 0.65rem",
+  borderRadius: "10px",
+  background: colors.surfaceSolid,
+  border: `1px solid #93c5fd`,
+  boxShadow: colors.shadow,
+  pointerEvents: "none",
+});
+
+const notePeekHeadStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "0.25rem",
+  fontSize: "0.78rem",
+  fontWeight: 700,
+  color: colors.text,
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const notePeekStarStyle = { color: colors.warn, fontSize: "0.8rem" };
+
+/*
+  메모 본문. **줄바꿈을 살리고 길면 줄인다** — 1,000자까지 적을 수 있어 그대로 두면 쪽지가
+  지도를 덮는다. 여섯 줄까지만 보이고 나머지는 단지를 열어 본다.
+*/
+const notePeekBodyStyle = {
+  fontSize: "0.76rem",
+  lineHeight: 1.5,
+  color: colors.textSoft,
+  whiteSpace: "pre-wrap",
+  display: "-webkit-box",
+  WebkitLineClamp: 6,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+};

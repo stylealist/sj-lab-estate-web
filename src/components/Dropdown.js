@@ -128,6 +128,18 @@ function Dropdown({
         : controlLightActiveStyle
       : null),
     ...style,
+    /*
+      **`flex` 를 넘겨 받았으면 칸을 가득 채운다**(2026-11-25).
+
+      어두운 변형(`controlDarkStyle`)은 헤더의 홀로 선 알약을 위해 `width: auto` 로 만들어졌는데,
+      그 값이 `controlBaseStyle` 의 `width: 100%` 를 덮어 **칸 안에서 글자 길이만큼만** 그려졌다.
+      바깥에서 `flex: 1` 로 똑같이 나눠 준 칸(예: 기간 두 개)이라도 알약은 제각각 짧아져,
+      가운데 놓은 "~" 가 **오른쪽으로 쏠려 보였다**(사용자 지적. 실측 칸 164.5px / 알약 117.5px).
+
+      `flex` 를 주는 쪽은 "이 자리를 네가 채워라" 라는 뜻이므로 그때만 100% 로 되돌린다 —
+      헤더처럼 `flex` 없이 쓰는 곳은 종전대로 글자 폭에 맞춘다.
+    */
+    ...(style && style.flex ? { width: "100%" } : null),
   };
 
   return (

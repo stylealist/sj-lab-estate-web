@@ -47,7 +47,7 @@ const itemStyle = {
   alignItems: "center",
   gap: "0.6rem",
   padding: "0.45rem 0",
-  borderBottom: `${colors.line}`,
+  borderBottom: `1px solid ${colors.line}`,
 };
 
 const rankStyle = {

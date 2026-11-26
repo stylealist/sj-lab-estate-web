@@ -48,7 +48,7 @@ export default ComingSoon;
 
 const cardStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "12px",
   padding: "2.2rem 1.6rem",
   maxWidth: "720px",
@@ -59,7 +59,7 @@ const cardStyle = {
 const badgeStyle = {
   display: "inline-block",
   background: colors.warnSoft,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   color: colors.warn,
   borderRadius: "999px",
   padding: "0.25rem 0.75rem",
@@ -80,7 +80,7 @@ const leadStyle = { fontSize: "0.92rem", color: colors.textSoft, lineHeight: 1.7
 
 const boxStyle = {
   background: colors.raised,
-  border: `${colors.line}`,
+  border: `1px solid ${colors.line}`,
   borderRadius: "10px",
   padding: "1rem 1.1rem",
   textAlign: "left",

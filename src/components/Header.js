@@ -40,6 +40,7 @@ function Header({
   const [collapsed, setCollapsed] = useState(false);
   const [isHubHovered, setIsHubHovered] = useState(false);
   const [isLogoutHovered, setIsLogoutHovered] = useState(false);
+  const [isLogoHovered, setIsLogoHovered] = useState(false);
   const [hoveredPage, setHoveredPage] = useState(null);
 
   const getPageStyle = (page) => {
@@ -58,22 +59,75 @@ function Header({
     };
   };
 
+  /*
+    **탭을 성격으로 나눠 그린다**(2026-11-25 사용자 요청).
+
+    `feature` 는 실제로 쓰는 기능(실거래 · 마이페이지), `info` 는 이 사이트를 설명하는
+    포트폴리오 영역(소개 · 저장소 · 문의)이다. 둘을 **세로 구분선**으로 가르고, 계정
+    영역(demo님 · 로그아웃) 앞에도 종전부터 있던 같은 선이 그대로 선다 —
+    `기능 │ 설명 │ 계정` 세 덩어리다.
+
+    **단추 생김새는 건드리지 않는다.** 설명 쪽도 똑같은 알약 묶음에 똑같은 탭이다 —
+    글자를 줄이거나 작은 링크로 바꿨더니 "다른 것이 생겼나" 하고 더 헷갈렸다(되돌린 시도).
+    달라지는 것은 **어느 칸에 있느냐**뿐이다.
+  */
+  const featurePages = pages.filter((page) => page.kind !== "info");
+  const infoPages = pages.filter((page) => page.kind === "info");
+
+  const renderTab = (page) => (
+    <button
+      key={page.id}
+      type="button"
+      style={getPageStyle(page)}
+      onClick={() => onSelectPage(page.id)}
+      onMouseEnter={() => setHoveredPage(page.id)}
+      onMouseLeave={() => setHoveredPage(null)}
+      onFocus={() => setHoveredPage(page.id)}
+      onBlur={() => setHoveredPage(null)}
+      aria-current={page.id === activePage ? "page" : undefined}
+    >
+      {page.label}
+    </button>
+  );
+
   return (
     <header style={collapsed ? { ...headerStyle, ...headerCollapsedStyle } : headerStyle}>
       <div style={collapsed ? { ...contentStyle, ...contentCollapsedStyle } : contentStyle}>
         {/* 로고: 배지 + 서비스명 + 영문 캡션 (지도의 .logo / .logo-mark / .logo-text) */}
-        <h1 style={logoStyle}>
-          <span style={logoMarkStyle} aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path d="M4 20V9.5l8-5 8 5V20" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-              <path d="M9 20v-5h6v5" stroke="currentColor" strokeWidth="1.6" />
-              <path d="M3 20h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </span>
-          <span style={logoTextStyle}>
-            <span style={logoTitleStyle}>SJ 부동산 실거래</span>
-            <span style={logoSubStyle}>Real Estate Transactions</span>
-          </span>
+        {/*
+          **로고를 누르면 실거래 화면으로 처음부터 다시 연다**(2026-11-25 사용자 요청).
+
+          화면 상태(고른 단지·지역·기간·배경지도·펼친 팝업)를 하나씩 되돌리는 대신 **새로고침**
+          한다 — 여느 사이트의 로고와 같은 "처음으로" 동작이고, 되돌릴 것을 빠뜨릴 일이 없다.
+          주소에 화면 상태를 담지 않으므로(상태는 React 안에 있다) 다시 읽으면 기본값인
+          실거래 화면으로 돌아온다.
+
+          `h1` 은 자리만 잡고 누를 수 있는 것은 안쪽 단추다 — 제목의 의미(h1)를 지키면서
+          키보드 초점도 제대로 받는다(div 에 onClick 만 달면 탭으로 닿지 않는다).
+        */}
+        <h1 style={logoHeadingStyle}>
+          <button
+            type="button"
+            style={isLogoHovered ? { ...logoStyle, ...logoHoverStyle } : logoStyle}
+            onClick={() => window.location.reload()}
+            onMouseEnter={() => setIsLogoHovered(true)}
+            onMouseLeave={() => setIsLogoHovered(false)}
+            onFocus={() => setIsLogoHovered(true)}
+            onBlur={() => setIsLogoHovered(false)}
+            title="실거래 화면을 처음부터 다시 엽니다"
+          >
+            <span style={logoMarkStyle} aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                <path d="M4 20V9.5l8-5 8 5V20" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M9 20v-5h6v5" stroke="currentColor" strokeWidth="1.6" />
+                <path d="M3 20h18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </span>
+            <span style={logoTextStyle}>
+              <span style={logoTitleStyle}>SJ 부동산 실거래</span>
+              <span style={logoSubStyle}>Real Estate Transactions</span>
+            </span>
+          </button>
         </h1>
 
         <div style={headerRightStyle}>
@@ -112,25 +166,24 @@ function Header({
             />
           )}
 
-          {/* 화면 전환(실거래 · 소개 · 저장소 · 문의) — 지도 사이트의 .nav-btn 묶음과 같은 역할.
-              매물 종류와 축이 달라 묶음을 따로 둔다. 소개·문의에서는 매물 종류 탭을 감춘다. */}
+          {/* 화면 전환 — 지도 사이트의 .nav-btn 묶음과 같은 역할. 매물 종류와 축이 달라
+              묶음을 따로 둔다. 소개·문의에서는 매물 종류 탭을 감춘다.
+
+              **실기능**(실거래 · 마이페이지). 둘은 어떤 경우에도 떼어 놓지 말 것 —
+              사이에 다른 것이 끼면 오히려 더 섞여 보인다(2026-11-25 되돌린 시도). */}
           <nav style={navStyle} aria-label="화면 전환">
-            {pages.map((page) => (
-              <button
-                key={page.id}
-                type="button"
-                style={getPageStyle(page)}
-                onClick={() => onSelectPage(page.id)}
-                onMouseEnter={() => setHoveredPage(page.id)}
-                onMouseLeave={() => setHoveredPage(null)}
-                onFocus={() => setHoveredPage(page.id)}
-                onBlur={() => setHoveredPage(null)}
-                aria-current={page.id === activePage ? "page" : undefined}
-              >
-                {page.label}
-              </button>
-            ))}
+            {featurePages.map(renderTab)}
           </nav>
+
+          {/* **포트폴리오 설명**(소개 · 저장소 · 문의) — 계정 영역과 같은 모양의 세로선
+              오른쪽에 선다. 묶음·단추 생김새는 위와 똑같다. */}
+          {infoPages.length > 0 && (
+            <div style={dividedGroupStyle}>
+              <nav style={navStyle} aria-label="사이트 소개">
+                {infoPages.map(renderTab)}
+              </nav>
+            </div>
+          )}
 
           <div style={userBoxStyle}>
             {username && (
@@ -237,7 +290,30 @@ const contentCollapsedStyle = {
   overflow: "hidden",
 };
 
-const logoStyle = { flexShrink: 0, display: "flex", alignItems: "center", gap: "0.65rem", margin: 0 };
+const logoHeadingStyle = { flexShrink: 0, margin: 0, display: "flex" };
+
+const logoStyle = {
+  flexShrink: 0,
+  display: "flex",
+  alignItems: "center",
+  gap: "0.65rem",
+  margin: 0,
+  padding: "0.2rem 0.35rem",
+  marginLeft: "-0.35rem",
+  border: "1px solid transparent",
+  borderRadius: "12px",
+  background: "transparent",
+  color: "inherit",
+  font: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+  transition: "background 0.18s ease, border-color 0.18s ease",
+};
+
+const logoHoverStyle = {
+  background: "rgba(148, 178, 232, 0.12)",
+  borderColor: "rgba(148, 178, 232, 0.24)",
+};
 
 const logoMarkStyle = {
   display: "flex",
@@ -276,6 +352,21 @@ const navStyle = {
   border: "1px solid rgba(148, 178, 232, 0.16)",
 };
 
+/**
+ * 덩어리를 가르는 세로선 — 계정 영역이 처음부터 쓰던 모양 그대로다.
+ *
+ * <p>헤더 오른쪽은 `기능 │ 설명 │ 계정` 세 덩어리이고, 두 선이 **같은 굵기·같은 색·같은 여백**
+ * 이어야 "성격이 바뀌는 자리" 로 읽힌다. 그래서 값을 한 곳에 두고 양쪽이 나눠 쓴다 —
+ * 한쪽만 고치면 선이 짝이 맞지 않는다.
+ */
+const groupDividerStyle = {
+  paddingLeft: "1.25rem",
+  borderLeft: "1px solid rgba(148, 178, 232, 0.2)",
+};
+
+// 설명 탭 묶음을 감싸는 칸 — 선을 긋는 것 말고는 하는 일이 없다
+const dividedGroupStyle = { display: "flex", alignItems: "center", ...groupDividerStyle };
+
 const tabBaseStyle = {
   border: "none",
   padding: "0.42rem 1.05rem",
@@ -292,8 +383,7 @@ const userBoxStyle = {
   display: "flex",
   alignItems: "center",
   gap: "0.6rem",
-  paddingLeft: "1.25rem",
-  borderLeft: "1px solid rgba(148, 178, 232, 0.2)",
+  ...groupDividerStyle,
 };
 
 const userNameStyle = {

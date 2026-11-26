@@ -202,6 +202,89 @@ export const removeFavorite = (aptSeq) =>
 export const markFavoriteSeen = (aptSeq) =>
   send("POST", `/member/favorites/${encodeURIComponent(aptSeq)}/seen`);
 
+// ── 목표가 알림 (2026-11-25) ───────────────────────────────────────────────
+//
+// 관심 단지에 "얼마가 되면 알려 줘" 를 적어 두면, 그 뒤에 올라온 거래 중 조건을 만족하는
+// 것이 있을 때 화면이 배지로 알린다. **밀어 주는 알림이 아니다**(메일·푸시 없음).
+//
+// 표에 컬럼을 더해야 쓸 수 있어, `fetchMemberStatus()` 의 **`target_ready`** 가 true 일 때만
+// 화면에 단추를 보여 준다(컬럼이 없으면 저장이 503 으로 거절된다).
+
+/** 목표가를 정해 둔 관심 단지만 — 지도 표시용(가볍다). */
+export const fetchFavoriteTargets = () => get("/member/favorites/targets");
+
+/**
+ * 목표가를 정하거나 고친다. 금액은 **만원** 단위이고, 비우면(null·0) 지운다.
+ *
+ * @param kind   "trade"(매매가) | "jeonse"(전세 보증금)
+ * @param dir    "below"(이하로 내려오면) | "above"(이상이면)
+ * @param pyeong 분양 평형. 비우면 단지의 모든 평형을 본다
+ */
+export const saveFavoriteTarget = (aptSeq, { amount, kind, dir, pyeong }) =>
+  send("PUT", `/member/favorites/${encodeURIComponent(aptSeq)}/target`, {
+    amount: amount === "" || amount == null ? null : amount,
+    kind: kind || "trade",
+    dir: dir || "below",
+    pyeong: pyeong === "" || pyeong == null ? null : pyeong,
+  });
+
+export const clearFavoriteTarget = (aptSeq) =>
+  send("DELETE", `/member/favorites/${encodeURIComponent(aptSeq)}/target`);
+
+// ── 카카오톡 알림 (2026-11-26) ─────────────────────────────────────────────
+//
+// 목표가에 닿으면 **카카오톡 "나와의 채팅"** 으로 알려 준다. 사이트에 들어오지 않아도
+// 알 수 있는 유일한 길이다(배지는 들어와야 보인다).
+//
+// **토큰은 화면이 만지지 않는다** — 카카오가 돌려준 `code` 만 서버에 넘기고, 서버가 토큰으로
+// 바꿔 보관한다. 화면은 "연결됨/안 됨" 만 안다.
+
+/**
+ * 카카오에서 돌아올 주소. **카카오 개발자 화면에 등록한 것과 한 글자도 다르면 안 된다** —
+ * 토큰을 받을 때 카카오가 이 값으로 대조한다. 그래서 쿼리·해시를 떼고 끝에 `/` 를 맞춘다.
+ */
+export function kakaoRedirectUri() {
+  const path = window.location.pathname.endsWith("/")
+    ? window.location.pathname
+    : `${window.location.pathname}/`;
+  return `${window.location.origin}${path}`;
+}
+
+export const fetchKakaoStatus = () => get("/member/kakao/status");
+
+export const fetchKakaoAuthorizeUrl = () =>
+  get("/member/kakao/authorize-url", { redirectUri: kakaoRedirectUri() });
+
+/**
+ * 카카오 동의 화면으로 <b>바로 보낸다</b>.
+ *
+ * <p>연결이 필요한 자리(마이페이지 카드 · 목표가 쪽지 …)마다 같은 코드를 쓰지 않도록 한 곳에
+ * 둔다. 주소는 <b>서버가 만든다</b> — 앱 키와 동의항목 이름이 화면에 박히면 키를 바꿀 때
+ * 화면까지 다시 배포해야 한다.
+ *
+ * <p>돌아오는 곳은 <b>지금 보고 있는 주소</b>이고, 돌아온 뒤 화면은 마이페이지를 연다
+ * (연결 상태와 시험 보내기가 거기 있다). 그래서 어디서 시작하든 끝나는 자리는 같다.
+ */
+export async function startKakaoLink() {
+  const data = await fetchKakaoAuthorizeUrl();
+  if (!data || !data.authorize_url) {
+    throw new Error("카카오 연결 주소를 받지 못했습니다.");
+  }
+  window.location.href = data.authorize_url;
+}
+
+/** 동의 화면이 돌려준 `code` 로 연결을 마친다. */
+export const linkKakao = (code) =>
+  send("PUT", "/member/kakao/link", { code, redirect_uri: kakaoRedirectUri() });
+
+export const unlinkKakao = () => send("DELETE", "/member/kakao/link");
+
+export const setKakaoEnabled = (enabled) =>
+  send("PUT", "/member/kakao/enabled", { enabled });
+
+/** 테스트 메시지 한 통 — 연결됐는지 사용자가 직접 확인한다. */
+export const sendKakaoTest = () => send("POST", "/member/kakao/test");
+
 export const fetchRecent = () => get("/member/recent");
 export const touchRecent = (aptSeq, body) =>
   send("POST", `/member/recent/${encodeURIComponent(aptSeq)}`, body || {});
